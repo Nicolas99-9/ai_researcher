@@ -140,6 +140,8 @@ class AgentManager:
         self.journals: Dict[str, Journal] = {}
         self.stage_history: List[StageTransition] = []
         self.completed_stages: List[str] = []
+        from .scientific_memory import ScientificMemory
+        self.scientific_memory = ScientificMemory()
         self.main_stage_dict: Dict[int, str] = {
             1: "initial_implementation",
             2: "baseline_tuning",
@@ -326,6 +328,7 @@ Your research idea:\n\n
             best_stage3_node=best_stage3_node,
             best_stage2_node=best_stage2_node,
             best_stage1_node=best_stage1_node,
+            scientific_memory=self.scientific_memory,
         )
 
     def _parse_vlm_feedback(self, node: Node) -> str:

@@ -1149,12 +1149,14 @@ class ParallelAgent:
         best_stage3_node=None,
         best_stage2_node=None,
         best_stage1_node=None,
+        scientific_memory=None,
     ):
         super().__init__()
         self.task_desc = task_desc
         self.cfg = cfg
         self.journal = journal
         self.stage_name = stage_name
+        self.scientific_memory = scientific_memory
         self.best_stage3_node = (
             best_stage3_node  # to initialize ablation stuides (stage 4)
         )
@@ -2069,11 +2071,13 @@ class ParallelAgent:
             else:
                 node_data_list.append(None)  # None means new draft
 
-        if self.cfg.agent.get("summary", None) is not None:
+        if self.scientific_memory is not None and len(self.scientific_memory) > 0:
+            memory_summary = self.scientific_memory.format_for_prompt(max_records=10)
+        elif self.cfg.agent.get("summary", None) is not None:
             memory_summary = self.journal.generate_summary(
-                include_code=False, 
+                include_code=False,
                 **{
-                    "model": self.cfg.agent.summary.model, 
+                    "model": self.cfg.agent.summary.model,
                     "temp": self.cfg.agent.summary.temp
                 }
             )
@@ -2168,6 +2172,10 @@ class ParallelAgent:
                 # Add node to journal's list and assign its step number
                 self.journal.append(result_node)
                 print("Added result node to journal")
+
+                # Record experiment in scientific memory for cross-stage persistence
+                if self.scientific_memory is not None:
+                    self.scientific_memory.record(result_node, stage_name=self.stage_name or "")
 
             except TimeoutError:
                 print("Worker process timed out, couldn't get the result")
