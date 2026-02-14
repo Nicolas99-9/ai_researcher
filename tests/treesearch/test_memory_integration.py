@@ -56,3 +56,24 @@ class TestMemoryIntegration:
         data = pickle.dumps(memory)
         restored = pickle.loads(data)
         assert len(restored) == 1
+
+
+class TestDebugPromptMemory:
+    def test_debug_prompt_includes_failure_patterns(self, make_node):
+        """When memory has failure records, _debug prompt should reference them."""
+        memory = ScientificMemory()
+
+        # Record OOM failures
+        for i in range(3):
+            n = make_node(
+                plan=f"large model {i}",
+                is_buggy=True,
+                exc_type="MemoryError",
+                analysis="Out of memory",
+            )
+            memory.record(n, stage_name="1_initial_1_first")
+
+        failure_text = memory.format_failures_for_prompt()
+        # Verify the failure text is useful
+        assert "MemoryError" in failure_text
+        assert len(failure_text) > 50

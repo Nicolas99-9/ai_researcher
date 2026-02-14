@@ -499,6 +499,9 @@ class MinimalAgent:
                 " followed by a single markdown code block which implements the bugfix/solution."
             ),
             "Research idea": self.task_desc,
+            "Known failure patterns from previous experiments": (
+                self.memory_summary if self.memory_summary else ""
+            ),
             "Previous (buggy) implementation": wrap_code(parent_node.code),
             "Execution output": wrap_code(parent_node.term_out, lang=""),
             "Feedback based on generated plots": parent_node.vlm_feedback_summary,
