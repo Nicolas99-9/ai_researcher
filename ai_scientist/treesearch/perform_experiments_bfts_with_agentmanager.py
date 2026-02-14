@@ -249,11 +249,19 @@ def perform_experiments_bfts(config_path: str):
         with open(ablation_summary_path, "w") as ablation_file:
             json.dump(ablation_summary, ablation_file, indent=2)
 
+        # Save hypothesis tracker results
+        hypothesis_summary_path = cfg.log_dir / "hypothesis_summary.json"
+        if hasattr(manager, 'hypothesis_tracker') and len(manager.hypothesis_tracker) > 0:
+            with open(hypothesis_summary_path, "w") as f:
+                json.dump(manager.hypothesis_tracker.to_dict(), f, indent=2)
+
         print(f"Summary reports written to files:")
         print(f"- Draft summary: {draft_summary_path}")
         print(f"- Baseline summary: {baseline_summary_path}")
         print(f"- Research summary: {research_summary_path}")
         print(f"- Ablation summary: {ablation_summary_path}")
+        if hasattr(manager, 'hypothesis_tracker') and len(manager.hypothesis_tracker) > 0:
+            print(f"- Hypothesis summary: {hypothesis_summary_path}")
 
 
 if __name__ == "__main__":

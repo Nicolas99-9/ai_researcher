@@ -489,6 +489,7 @@ def perform_writeup(
             ("logs/0-run/baseline_summary.json", "BASELINE_SUMMARY"),
             ("logs/0-run/research_summary.json", "RESEARCH_SUMMARY"),
             ("logs/0-run/ablation_summary.json", "ABLATION_SUMMARY"),
+            ("logs/0-run/hypothesis_summary.json", "HYPOTHESIS_SUMMARY"),
         ]
         loaded_summaries = {}
         for fname, key in summary_files:
