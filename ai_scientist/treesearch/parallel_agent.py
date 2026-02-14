@@ -1878,7 +1878,7 @@ class ParallelAgent:
                 hypothesis = untested[0]
                 hypothesis.status = "testing"
                 return AblationIdea(
-                    name=f"hypothesis_test: {hypothesis.claim[:60]}",
+                    name=f"hypothesis_test:{hypothesis.id}",
                     description=build_ablation_prompt_from_hypothesis(
                         hypothesis=hypothesis,
                         base_code=self.best_stage3_node.code if self.best_stage3_node else "",
@@ -2251,33 +2251,43 @@ class ParallelAgent:
             print(f"[red]ablation_name is None for result_node: {result_node.id}[/red]")
             return
 
+        is_hypothesis_ablation = (
+            self.hypothesis_tracker is not None
+            and ablation_name
+            and ablation_name.startswith("hypothesis_test:")
+        )
+
         if not result_node.is_buggy:
             self._ablation_state["completed_ablations"].add(ablation_name)
             logger.info(f"Ablation {ablation_name} completed successfully")
 
             # If this was a hypothesis-driven ablation, evaluate the evidence
-            if (
-                self.hypothesis_tracker is not None
-                and ablation_name
-                and ablation_name.startswith("hypothesis_test:")
-            ):
+            if is_hypothesis_ablation:
                 self._evaluate_hypothesis_evidence(result_node)
+        else:
+            # Buggy ablation — reset hypothesis back to untested so it can be retried
+            if is_hypothesis_ablation:
+                hypothesis = self._find_hypothesis_by_ablation_name(ablation_name)
+                if hypothesis and hypothesis.status == "testing":
+                    hypothesis.status = "untested"
+                    logger.info(f"Hypothesis '{hypothesis.claim[:50]}' reset to untested after buggy ablation")
+
+    def _find_hypothesis_by_ablation_name(self, ablation_name: str):
+        """Find the hypothesis matching an ablation name like 'hypothesis_test:<id>'."""
+        hypothesis_id = ablation_name.replace("hypothesis_test:", "")
+        for h in self.hypothesis_tracker.hypotheses:
+            if h.id == hypothesis_id:
+                return h
+        return None
 
     def _evaluate_hypothesis_evidence(self, result_node: Node):
         """Use LLM to evaluate whether ablation results support or falsify a hypothesis."""
         from .hypothesis_tracker import hypothesis_evidence_spec
         from .backend import query
 
-        # Find the matching hypothesis (by ablation_name prefix match)
-        claim_snippet = result_node.ablation_name.replace("hypothesis_test: ", "")
-        matching = [
-            h for h in self.hypothesis_tracker.hypotheses
-            if h.claim[:60] == claim_snippet and h.status in ("untested", "testing")
-        ]
-        if not matching:
+        hypothesis = self._find_hypothesis_by_ablation_name(result_node.ablation_name)
+        if not hypothesis or hypothesis.status not in ("untested", "testing"):
             return
-
-        hypothesis = matching[0]
 
         try:
             prompt = {

@@ -6,6 +6,7 @@ falsification experiment design for hypothesis-driven ablation studies.
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -19,6 +20,7 @@ class Hypothesis(DataClassJsonMixin):
     claim: str = ""
     prediction: str = ""  # testable prediction derived from claim
     source_node_id: str = ""  # which experiment generated this hypothesis
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     status: str = "untested"  # "untested" | "supported" | "falsified" | "inconclusive" | "testing"
     confidence: float = 0.5  # 0.0 to 1.0
     evidence: list[dict] = field(default_factory=list)  # list of evidence dicts

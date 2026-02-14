@@ -333,7 +333,7 @@ Your research idea:\n\n
             best_stage2_node=best_stage2_node,
             best_stage1_node=best_stage1_node,
             scientific_memory=self.scientific_memory,
-            hypothesis_tracker=getattr(self, 'hypothesis_tracker', None),
+            hypothesis_tracker=self.hypothesis_tracker,
         )
 
     def _parse_vlm_feedback(self, node: Node) -> str:
