@@ -6,11 +6,14 @@ falsification experiment design for hypothesis-driven ablation studies.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
 from dataclasses_json import DataClassJsonMixin
+
+logger = logging.getLogger("ai-scientist")
 
 
 @dataclass
@@ -34,6 +37,8 @@ class Hypothesis(DataClassJsonMixin):
         node_id: str = "",
     ):
         """Update hypothesis with new experimental evidence."""
+        old_status = self.status
+        old_confidence = self.confidence
         self.evidence.append({
             "result": result,
             "falsified": falsified,
@@ -46,6 +51,14 @@ class Hypothesis(DataClassJsonMixin):
             self.status = "supported"
         if node_id:
             self.falsification_node_ids.append(node_id)
+        logger.info(
+            f"[Hypothesis] id={self.id} updated: "
+            f"status {old_status}→{self.status}, "
+            f"confidence {old_confidence:.2f}→{self.confidence:.2f}, "
+            f"falsified={falsified}, node_id={node_id}, "
+            f"claim='{self.claim[:80]}', "
+            f"evidence_result='{result[:120]}'"
+        )
 
 
 @dataclass
@@ -59,6 +72,13 @@ class HypothesisTracker(DataClassJsonMixin):
 
     def add(self, hypothesis: Hypothesis):
         self.hypotheses.append(hypothesis)
+        logger.info(
+            f"[HypothesisTracker] Added hypothesis id={hypothesis.id}: "
+            f"claim='{hypothesis.claim[:80]}', "
+            f"prediction='{hypothesis.prediction[:80]}', "
+            f"source_node={hypothesis.source_node_id}, "
+            f"total_hypotheses={len(self.hypotheses)}"
+        )
 
     def get_untested(self) -> list[Hypothesis]:
         return [h for h in self.hypotheses if h.status == "untested"]

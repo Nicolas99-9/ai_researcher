@@ -144,6 +144,7 @@ class AgentManager:
         from .hypothesis_tracker import HypothesisTracker
         self.scientific_memory = ScientificMemory()
         self.hypothesis_tracker = HypothesisTracker()
+        logger.info("[AgentManager] Initialized ScientificMemory and HypothesisTracker")
         self.main_stage_dict: Dict[int, str] = {
             1: "initial_implementation",
             2: "baseline_tuning",
@@ -273,6 +274,11 @@ Your research idea:\n\n
             "scientific_memory": self.scientific_memory.to_dict(),
             "hypothesis_tracker": self.hypothesis_tracker.to_dict(),
         }
+        logger.info(
+            f"[AgentManager] Saving checkpoint to {save_path}: "
+            f"memory_records={len(self.scientific_memory)}, "
+            f"hypotheses={len(self.hypothesis_tracker)}"
+        )
         print("Saving checkpoint to ", save_path)
         with open(save_path, "wb") as f:
             pickle.dump(checkpoint, f)
@@ -551,10 +557,18 @@ Your research idea:\n\n
             build_hypothesis_generation_prompt,
         )
 
+        logger.info(f"[AgentManager] _generate_hypotheses_from_stage3 called for stage={stage_name}")
+
         best_node = self._get_best_implementation(stage_name)
         if not best_node:
-            logger.warning(f"No best node for hypothesis generation from {stage_name}")
+            logger.warning(f"[AgentManager] No best node for hypothesis generation from {stage_name}")
             return
+
+        logger.info(
+            f"[AgentManager] Best node for hypothesis generation: "
+            f"id={best_node.id}, plan='{best_node.plan[:100]}', "
+            f"metric={best_node.metric}, code_len={len(best_node.code)}"
+        )
 
         prompt = build_hypothesis_generation_prompt(
             research_idea=self._curate_task_desc(self.stages[-1]),
@@ -562,6 +576,7 @@ Your research idea:\n\n
             best_node_analysis=best_node.analysis or "",
             best_node_code=best_node.code,
         )
+        logger.info(f"[AgentManager] Hypothesis generation prompt length: {len(prompt)} chars")
 
         try:
             response = query(
@@ -571,15 +586,25 @@ Your research idea:\n\n
                 model=self.cfg.agent.feedback.model,
                 temperature=self.cfg.agent.feedback.temp,
             )
-            for h_data in response.get("hypotheses", []):
+            raw_hypotheses = response.get("hypotheses", [])
+            logger.info(f"[AgentManager] LLM returned {len(raw_hypotheses)} hypotheses")
+            for i, h_data in enumerate(raw_hypotheses):
+                logger.info(
+                    f"[AgentManager] Raw hypothesis {i+1}: "
+                    f"claim='{h_data.get('claim', '')[:100]}', "
+                    f"prediction='{h_data.get('prediction', '')[:100]}'"
+                )
                 self.hypothesis_tracker.add(Hypothesis(
                     claim=h_data["claim"],
                     prediction=h_data["prediction"],
                     source_node_id=best_node.id,
                 ))
-            logger.info(f"Generated {len(self.hypothesis_tracker)} hypotheses for stage 4")
+            logger.info(
+                f"[AgentManager] Hypothesis generation complete: "
+                f"{len(self.hypothesis_tracker)} total hypotheses in tracker"
+            )
         except Exception as e:
-            logger.error(f"Failed to generate hypotheses: {e}")
+            logger.error(f"[AgentManager] Failed to generate hypotheses: {e}", exc_info=True)
             # Fall back: stage 4 will use generic ablation generation
 
     def _get_best_implementation(self, stage_name: str) -> Optional[Node]:
@@ -814,6 +839,10 @@ Your research idea:\n\n
 
                             # Generate hypotheses at end of stage 3 for stage 4
                             if self.parse_stage_names(current_substage.name)[0] == 3:
+                                logger.info(
+                                    f"[AgentManager] Stage 3 complete ({current_substage.name}), "
+                                    f"triggering hypothesis generation for stage 4"
+                                )
                                 self._generate_hypotheses_from_stage3(current_substage.name)
 
                             # Exit the loop to move to next main stage

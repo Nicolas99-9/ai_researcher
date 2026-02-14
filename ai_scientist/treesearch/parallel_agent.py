@@ -492,6 +492,17 @@ class MinimalAgent:
         return Node(plan=plan, code=code)
 
     def _debug(self, parent_node: Node) -> Node:
+        failure_memory = self.memory_summary if self.memory_summary else ""
+        if failure_memory:
+            logger.info(
+                f"[_debug] Injecting failure memory into debug prompt "
+                f"(length={len(failure_memory)}, node={parent_node.id})"
+            )
+        else:
+            logger.debug(
+                f"[_debug] No failure memory available for debug prompt "
+                f"(node={parent_node.id})"
+            )
         prompt: Any = {
             "Introduction": (
                 "You are an experienced AI researcher. Your previous code for research experiment had a bug, so based on the information below, you should revise it in order to fix this bug. "
@@ -499,9 +510,7 @@ class MinimalAgent:
                 " followed by a single markdown code block which implements the bugfix/solution."
             ),
             "Research idea": self.task_desc,
-            "Known failure patterns from previous experiments": (
-                self.memory_summary if self.memory_summary else ""
-            ),
+            "Known failure patterns from previous experiments": failure_memory,
             "Previous (buggy) implementation": wrap_code(parent_node.code),
             "Execution output": wrap_code(parent_node.term_out, lang=""),
             "Feedback based on generated plots": parent_node.vlm_feedback_summary,
@@ -1874,17 +1883,33 @@ class ParallelAgent:
         if self.hypothesis_tracker is not None:
             from .hypothesis_tracker import build_ablation_prompt_from_hypothesis
             untested = self.hypothesis_tracker.get_untested()
+            logger.info(
+                f"[ParallelAgent] _generate_ablation_idea: "
+                f"hypothesis_tracker has {len(self.hypothesis_tracker)} total, "
+                f"{len(untested)} untested, "
+                f"{len(completed)} completed ablations"
+            )
             if untested:
                 hypothesis = untested[0]
                 hypothesis.status = "testing"
+                ablation_name = f"hypothesis_test:{hypothesis.id}"
+                logger.info(
+                    f"[ParallelAgent] Generating hypothesis-driven ablation: "
+                    f"name='{ablation_name}', "
+                    f"hypothesis_id={hypothesis.id}, "
+                    f"claim='{hypothesis.claim[:80]}', "
+                    f"prediction='{hypothesis.prediction[:80]}'"
+                )
                 return AblationIdea(
-                    name=f"hypothesis_test:{hypothesis.id}",
+                    name=ablation_name,
                     description=build_ablation_prompt_from_hypothesis(
                         hypothesis=hypothesis,
                         base_code=self.best_stage3_node.code if self.best_stage3_node else "",
                         previous_ablations=completed,
                     ),
                 )
+            else:
+                logger.info("[ParallelAgent] No untested hypotheses, falling back to generic ablation")
 
         # Fall back to generic ablation generation
         ablation_prompt = {
@@ -2094,6 +2119,10 @@ class ParallelAgent:
                 node_data_list.append(None)  # None means new draft
 
         if self.scientific_memory is not None and len(self.scientific_memory) > 0:
+            logger.info(
+                f"[ParallelAgent] Using ScientificMemory for prompt "
+                f"({len(self.scientific_memory)} records)"
+            )
             memory_summary = self.scientific_memory.format_for_prompt(max_records=10)
         elif self.cfg.agent.get("summary", None) is not None:
             memory_summary = self.journal.generate_summary(
@@ -2197,6 +2226,10 @@ class ParallelAgent:
 
                 # Record experiment in scientific memory for cross-stage persistence
                 if self.scientific_memory is not None:
+                    logger.info(
+                        f"[ParallelAgent] Recording node {result_node.id} in ScientificMemory "
+                        f"(stage={self.stage_name}, buggy={result_node.is_buggy})"
+                    )
                     self.scientific_memory.record(result_node, stage_name=self.stage_name or "")
 
             except TimeoutError:
@@ -2248,6 +2281,10 @@ class ParallelAgent:
 
         ablation_name = result_node.ablation_name
         if ablation_name is None:
+            logger.warning(
+                f"[_update_ablation_state] ablation_name is None for "
+                f"result_node={result_node.id}, skipping"
+            )
             print(f"[red]ablation_name is None for result_node: {result_node.id}[/red]")
             return
 
@@ -2257,27 +2294,74 @@ class ParallelAgent:
             and ablation_name.startswith("hypothesis_test:")
         )
 
+        logger.info(
+            f"[_update_ablation_state] node={result_node.id}, "
+            f"ablation_name='{ablation_name}', "
+            f"is_buggy={result_node.is_buggy}, "
+            f"is_hypothesis_ablation={is_hypothesis_ablation}"
+        )
+
         if not result_node.is_buggy:
             self._ablation_state["completed_ablations"].add(ablation_name)
-            logger.info(f"Ablation {ablation_name} completed successfully")
+            logger.info(
+                f"[_update_ablation_state] Ablation '{ablation_name}' completed successfully, "
+                f"total_completed={len(self._ablation_state['completed_ablations'])}"
+            )
 
             # If this was a hypothesis-driven ablation, evaluate the evidence
             if is_hypothesis_ablation:
+                logger.info(
+                    f"[_update_ablation_state] Triggering hypothesis evidence evaluation "
+                    f"for ablation '{ablation_name}'"
+                )
                 self._evaluate_hypothesis_evidence(result_node)
         else:
+            logger.warning(
+                f"[_update_ablation_state] Ablation '{ablation_name}' failed (buggy), "
+                f"node={result_node.id}"
+            )
             # Buggy ablation — reset hypothesis back to untested so it can be retried
             if is_hypothesis_ablation:
                 hypothesis = self._find_hypothesis_by_ablation_name(ablation_name)
                 if hypothesis and hypothesis.status == "testing":
                     hypothesis.status = "untested"
-                    logger.info(f"Hypothesis '{hypothesis.claim[:50]}' reset to untested after buggy ablation")
+                    logger.info(
+                        f"[_update_ablation_state] Hypothesis id={hypothesis.id} "
+                        f"reset to 'untested' after buggy ablation, "
+                        f"claim='{hypothesis.claim[:80]}'"
+                    )
+                elif hypothesis:
+                    logger.warning(
+                        f"[_update_ablation_state] Hypothesis id={hypothesis.id} "
+                        f"found but status='{hypothesis.status}' (not 'testing'), "
+                        f"not resetting"
+                    )
+                else:
+                    logger.warning(
+                        f"[_update_ablation_state] No hypothesis found for "
+                        f"ablation_name='{ablation_name}'"
+                    )
 
     def _find_hypothesis_by_ablation_name(self, ablation_name: str):
         """Find the hypothesis matching an ablation name like 'hypothesis_test:<id>'."""
         hypothesis_id = ablation_name.replace("hypothesis_test:", "")
+        logger.debug(
+            f"[_find_hypothesis_by_ablation_name] Looking up hypothesis_id='{hypothesis_id}' "
+            f"from ablation_name='{ablation_name}', "
+            f"tracker has {len(self.hypothesis_tracker.hypotheses)} hypotheses"
+        )
         for h in self.hypothesis_tracker.hypotheses:
             if h.id == hypothesis_id:
+                logger.info(
+                    f"[_find_hypothesis_by_ablation_name] Found hypothesis id={h.id}, "
+                    f"status='{h.status}', claim='{h.claim[:80]}'"
+                )
                 return h
+        logger.warning(
+            f"[_find_hypothesis_by_ablation_name] No hypothesis found for "
+            f"id='{hypothesis_id}', available IDs: "
+            f"{[h.id for h in self.hypothesis_tracker.hypotheses]}"
+        )
         return None
 
     def _evaluate_hypothesis_evidence(self, result_node: Node):
@@ -2287,17 +2371,42 @@ class ParallelAgent:
 
         hypothesis = self._find_hypothesis_by_ablation_name(result_node.ablation_name)
         if not hypothesis or hypothesis.status not in ("untested", "testing"):
+            logger.info(
+                f"[_evaluate_hypothesis_evidence] Skipping: hypothesis={'found' if hypothesis else 'not found'}, "
+                f"status={hypothesis.status if hypothesis else 'N/A'}, "
+                f"ablation_name='{result_node.ablation_name}'"
+            )
             return
 
+        logger.info(
+            f"[_evaluate_hypothesis_evidence] Evaluating hypothesis id={hypothesis.id}, "
+            f"claim='{hypothesis.claim[:80]}', "
+            f"prediction='{hypothesis.prediction[:80]}', "
+            f"ablation_node={result_node.id}"
+        )
+
         try:
+            analysis_text = result_node.analysis or ""
+            metrics_text = str(result_node.metric) if result_node.metric else "N/A"
+            term_out_text = result_node.term_out[:500] if result_node.term_out else ""
+
             prompt = {
                 "Introduction": "Evaluate whether experimental evidence supports or falsifies a hypothesis.",
                 "Hypothesis claim": hypothesis.claim,
                 "Hypothesis prediction": hypothesis.prediction,
-                "Ablation result analysis": result_node.analysis or "",
-                "Ablation metrics": str(result_node.metric) if result_node.metric else "N/A",
-                "Ablation terminal output (excerpt)": result_node.term_out[:500] if result_node.term_out else "",
+                "Ablation result analysis": analysis_text,
+                "Ablation metrics": metrics_text,
+                "Ablation terminal output (excerpt)": term_out_text,
             }
+
+            logger.info(
+                f"[_evaluate_hypothesis_evidence] Sending LLM query: "
+                f"model={self.cfg.agent.feedback.model}, "
+                f"analysis_len={len(analysis_text)}, "
+                f"metrics='{metrics_text[:100]}', "
+                f"term_out_len={len(term_out_text)}"
+            )
+
             response = query(
                 system_message=prompt,
                 user_message=None,
@@ -2305,6 +2414,14 @@ class ParallelAgent:
                 model=self.cfg.agent.feedback.model,
                 temperature=self.cfg.agent.feedback.temp,
             )
+
+            logger.info(
+                f"[_evaluate_hypothesis_evidence] LLM response: "
+                f"falsified={response.get('falsified')}, "
+                f"confidence={response.get('confidence')}, "
+                f"reasoning='{str(response.get('reasoning', ''))[:150]}'"
+            )
+
             hypothesis.update_with_evidence(
                 result=response.get("reasoning", ""),
                 falsified=response.get("falsified", False),
@@ -2312,11 +2429,17 @@ class ParallelAgent:
                 node_id=result_node.id,
             )
             logger.info(
-                f"Hypothesis '{hypothesis.claim[:50]}' → {hypothesis.status} "
-                f"(confidence: {hypothesis.confidence:.2f})"
+                f"[_evaluate_hypothesis_evidence] Hypothesis id={hypothesis.id} "
+                f"updated → status='{hypothesis.status}', "
+                f"confidence={hypothesis.confidence:.2f}, "
+                f"total_evidence={len(hypothesis.evidence)}"
             )
         except Exception as e:
-            logger.error(f"Failed to evaluate hypothesis evidence: {e}")
+            logger.error(
+                f"[_evaluate_hypothesis_evidence] Failed to evaluate hypothesis "
+                f"id={hypothesis.id}: {e}",
+                exc_info=True,
+            )
 
     def _aggregate_seed_eval_results(
         self, seed_nodes: List[Node], parent_node: Node

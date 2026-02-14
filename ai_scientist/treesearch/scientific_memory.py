@@ -7,10 +7,13 @@ failures) across stages, enabling retrieval-augmented experiment design.
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass, field
 from typing import Optional, Any
 
 from dataclasses_json import DataClassJsonMixin
+
+logger = logging.getLogger("ai-scientist")
 
 
 @dataclass
@@ -77,6 +80,12 @@ class ScientificMemory(DataClassJsonMixin):
         """Record an experiment from a Node. Returns the created record."""
         rec = ExperimentRecord.from_node(node, stage_name=stage_name)
         self.records.append(rec)
+        logger.info(
+            f"[ScientificMemory] Recorded experiment: node={rec.node_id}, "
+            f"stage={rec.stage_name}, outcome={rec.outcome}, "
+            f"failure_mode={rec.failure_mode}, code_hash={rec.code_hash}, "
+            f"total_records={len(self.records)}"
+        )
         return rec
 
     def get_failures(self, failure_mode: Optional[str] = None) -> list[ExperimentRecord]:
@@ -121,6 +130,10 @@ class ScientificMemory(DataClassJsonMixin):
         if not selected:
             return "No previous experiments recorded."
 
+        logger.info(
+            f"[ScientificMemory] format_for_prompt: {len(failures)} failures, "
+            f"{len(successes)} successes, {len(selected)} selected (max={max_records})"
+        )
         lines = ["## Experiment Memory (previous attempts and outcomes)"]
         for r in selected[:max_records]:
             lines.append("---")
