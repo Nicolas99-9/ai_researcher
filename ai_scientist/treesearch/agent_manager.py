@@ -141,7 +141,9 @@ class AgentManager:
         self.stage_history: List[StageTransition] = []
         self.completed_stages: List[str] = []
         from .scientific_memory import ScientificMemory
+        from .hypothesis_tracker import HypothesisTracker
         self.scientific_memory = ScientificMemory()
+        self.hypothesis_tracker = HypothesisTracker()
         self.main_stage_dict: Dict[int, str] = {
             1: "initial_implementation",
             2: "baseline_tuning",
@@ -539,6 +541,45 @@ Your research idea:\n\n
         print(f"[green]Stage {stage.name} not completed[/green]")
         return False, "stage not completed"
 
+    def _generate_hypotheses_from_stage3(self, stage_name: str):
+        """Generate hypotheses from stage 3 results for stage 4 testing."""
+        from .hypothesis_tracker import (
+            Hypothesis,
+            hypothesis_generation_spec,
+            build_hypothesis_generation_prompt,
+        )
+
+        best_node = self._get_best_implementation(stage_name)
+        if not best_node:
+            logger.warning(f"No best node for hypothesis generation from {stage_name}")
+            return
+
+        prompt = build_hypothesis_generation_prompt(
+            research_idea=self._curate_task_desc(self.stages[-1]),
+            best_node_plan=best_node.plan,
+            best_node_analysis=best_node.analysis or "",
+            best_node_code=best_node.code,
+        )
+
+        try:
+            response = query(
+                system_message=prompt,
+                user_message=None,
+                func_spec=hypothesis_generation_spec,
+                model=self.cfg.agent.feedback.model,
+                temperature=self.cfg.agent.feedback.temp,
+            )
+            for h_data in response.get("hypotheses", []):
+                self.hypothesis_tracker.add(Hypothesis(
+                    claim=h_data["claim"],
+                    prediction=h_data["prediction"],
+                    source_node_id=best_node.id,
+                ))
+            logger.info(f"Generated {len(self.hypothesis_tracker)} hypotheses for stage 4")
+        except Exception as e:
+            logger.error(f"Failed to generate hypotheses: {e}")
+            # Fall back: stage 4 will use generic ablation generation
+
     def _get_best_implementation(self, stage_name: str) -> Optional[Node]:
         """Get the best implementation from a completed stage"""
         if stage_name not in self.journals:
@@ -768,6 +809,10 @@ Your research idea:\n\n
                                     self.current_stage = None
                                     current_substage = None
                                     break
+
+                            # Generate hypotheses at end of stage 3 for stage 4
+                            if self.parse_stage_names(current_substage.name)[0] == 3:
+                                self._generate_hypotheses_from_stage3(current_substage.name)
 
                             # Exit the loop to move to next main stage
                             current_substage = None

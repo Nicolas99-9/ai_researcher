@@ -132,3 +132,12 @@ class TestHypothesisGeneration:
         from ai_scientist.treesearch.hypothesis_tracker import hypothesis_generation_spec
         assert hypothesis_generation_spec.name == "generate_hypotheses"
         assert "hypotheses" in hypothesis_generation_spec.json_schema["properties"]
+
+
+class TestHypothesisGenerationTrigger:
+    def test_tracker_initialized_and_usable(self):
+        """HypothesisTracker should be initializable and hold hypotheses."""
+        tracker = HypothesisTracker()
+        assert len(tracker) == 0
+        tracker.add(Hypothesis(claim="test", prediction="test pred", source_node_id="n1"))
+        assert len(tracker) == 1
