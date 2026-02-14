@@ -1,0 +1,113 @@
+import pytest
+from ai_scientist.treesearch.hypothesis_tracker import Hypothesis, HypothesisTracker
+
+
+class TestHypothesis:
+    def test_create_hypothesis(self):
+        h = Hypothesis(
+            claim="Attention mechanism is responsible for >50% of improvement",
+            prediction="Removing attention drops accuracy by >50% of the gain",
+            source_node_id="abc-123",
+            confidence=0.5,
+        )
+        assert h.claim != ""
+        assert h.status == "untested"
+        assert h.confidence == 0.5
+
+    def test_update_after_falsification(self):
+        h = Hypothesis(
+            claim="Dropout is essential",
+            prediction="Removing dropout drops accuracy by >5%",
+            source_node_id="abc-123",
+        )
+        h.update_with_evidence(
+            result="Accuracy dropped by 1%",
+            falsified=True,
+            new_confidence=0.1,
+        )
+        assert h.status == "falsified"
+        assert h.confidence == 0.1
+        assert len(h.evidence) == 1
+
+    def test_update_after_support(self):
+        h = Hypothesis(
+            claim="Data augmentation helps",
+            prediction="Removing augmentation drops accuracy by >3%",
+            source_node_id="abc-123",
+        )
+        h.update_with_evidence(
+            result="Accuracy dropped by 8%",
+            falsified=False,
+            new_confidence=0.85,
+        )
+        assert h.status == "supported"
+        assert h.confidence == 0.85
+
+    def test_serialization_roundtrip(self):
+        h = Hypothesis(
+            claim="test claim",
+            prediction="test prediction",
+            source_node_id="xyz",
+        )
+        d = h.to_dict()
+        restored = Hypothesis.from_dict(d)
+        assert restored.claim == h.claim
+        assert restored.status == h.status
+
+
+class TestHypothesisTracker:
+    def test_add_hypothesis(self):
+        tracker = HypothesisTracker()
+        tracker.add(Hypothesis(
+            claim="Method X works",
+            prediction="Removing X hurts",
+            source_node_id="n1",
+        ))
+        assert len(tracker) == 1
+
+    def test_get_untested(self):
+        tracker = HypothesisTracker()
+        h1 = Hypothesis(claim="A", prediction="P1", source_node_id="n1")
+        h2 = Hypothesis(claim="B", prediction="P2", source_node_id="n2")
+        h2.status = "supported"
+        tracker.add(h1)
+        tracker.add(h2)
+        untested = tracker.get_untested()
+        assert len(untested) == 1
+        assert untested[0].claim == "A"
+
+    def test_get_by_status(self):
+        tracker = HypothesisTracker()
+        h1 = Hypothesis(claim="A", prediction="P1", source_node_id="n1")
+        h1.status = "falsified"
+        h2 = Hypothesis(claim="B", prediction="P2", source_node_id="n2")
+        h2.status = "supported"
+        tracker.add(h1)
+        tracker.add(h2)
+        assert len(tracker.get_by_status("falsified")) == 1
+        assert len(tracker.get_by_status("supported")) == 1
+
+    def test_format_for_prompt(self):
+        tracker = HypothesisTracker()
+        tracker.add(Hypothesis(
+            claim="Attention is key",
+            prediction="Remove attention → big drop",
+            source_node_id="n1",
+        ))
+        text = tracker.format_for_prompt()
+        assert "Attention" in text
+
+    def test_format_for_paper(self):
+        tracker = HypothesisTracker()
+        h = Hypothesis(claim="Method works", prediction="Ablation shows drop", source_node_id="n1")
+        h.update_with_evidence(result="5% drop confirmed", falsified=False, new_confidence=0.9)
+        tracker.add(h)
+        paper_text = tracker.format_for_paper()
+        assert "supported" in paper_text.lower() or "Method works" in paper_text
+
+    def test_serialization_roundtrip(self):
+        tracker = HypothesisTracker()
+        tracker.add(Hypothesis(claim="X", prediction="Y", source_node_id="n1"))
+        d = tracker.to_dict()
+        restored = HypothesisTracker.from_dict(d)
+        assert len(restored) == len(tracker)
