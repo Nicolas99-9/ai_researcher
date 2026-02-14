@@ -13,7 +13,7 @@ from typing import Optional
 
 from dataclasses_json import DataClassJsonMixin
 
-logger = logging.getLogger("ai-scientist")
+logger = logging.getLogger("ai-researcher")
 
 
 @dataclass

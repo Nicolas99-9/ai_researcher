@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Union
 
 import backoff
 
-from ai_scientist.tools.base_tool import BaseTool
+from ai_researcher.tools.base_tool import BaseTool
 
 
 def on_backoff(details: Dict) -> None:

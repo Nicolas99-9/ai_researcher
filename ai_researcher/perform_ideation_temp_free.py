@@ -8,14 +8,14 @@ from typing import Any, Dict, List
 import sys
 
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
-from ai_scientist.llm import (
+from ai_researcher.llm import (
     AVAILABLE_LLMS,
     create_client,
     get_response_from_llm,
 )
 
-from ai_scientist.tools.semantic_scholar import SemanticScholarSearchTool
-from ai_scientist.tools.base_tool import BaseTool
+from ai_researcher.tools.semantic_scholar import SemanticScholarSearchTool
+from ai_researcher.tools.base_tool import BaseTool
 
 # Create tool instances
 semantic_scholar_tool = SemanticScholarSearchTool()

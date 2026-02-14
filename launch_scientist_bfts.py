@@ -7,25 +7,25 @@ import os
 import re
 import sys
 from datetime import datetime
-from ai_scientist.llm import create_client
+from ai_researcher.llm import create_client
 
 from contextlib import contextmanager
-from ai_scientist.treesearch.perform_experiments_bfts_with_agentmanager import (
+from ai_researcher.treesearch.perform_experiments_bfts_with_agentmanager import (
     perform_experiments_bfts,
 )
-from ai_scientist.treesearch.bfts_utils import (
+from ai_researcher.treesearch.bfts_utils import (
     idea_to_markdown,
     edit_bfts_config_file,
 )
-from ai_scientist.perform_plotting import aggregate_plots
-from ai_scientist.perform_writeup import perform_writeup
-from ai_scientist.perform_icbinb_writeup import (
+from ai_researcher.perform_plotting import aggregate_plots
+from ai_researcher.perform_writeup import perform_writeup
+from ai_researcher.perform_icbinb_writeup import (
     perform_writeup as perform_icbinb_writeup,
     gather_citations,
 )
-from ai_scientist.perform_llm_review import perform_review, load_paper
-from ai_scientist.perform_vlm_review import perform_imgs_cap_ref_review
-from ai_scientist.utils.token_tracker import token_tracker
+from ai_researcher.perform_llm_review import perform_review, load_paper
+from ai_researcher.perform_vlm_review import perform_imgs_cap_ref_review
+from ai_researcher.utils.token_tracker import token_tracker
 
 
 def print_time():

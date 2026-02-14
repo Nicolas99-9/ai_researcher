@@ -6,7 +6,7 @@ import backoff
 import openai
 import os
 from PIL import Image
-from ai_scientist.utils.token_tracker import track_token_usage
+from ai_researcher.utils.token_tracker import track_token_usage
 
 MAX_NUM_TOKENS = 4096
 

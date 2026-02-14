@@ -3,7 +3,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-logger = logging.getLogger("ai-scientist")
+logger = logging.getLogger("ai-researcher")
 
 
 def copytree(src: Path, dst: Path, use_symlinks=True):

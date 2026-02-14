@@ -12,7 +12,7 @@ import backoff
 import logging
 from typing import Callable
 
-logger = logging.getLogger("ai-scientist")
+logger = logging.getLogger("ai-researcher")
 
 
 @backoff.on_predicate(

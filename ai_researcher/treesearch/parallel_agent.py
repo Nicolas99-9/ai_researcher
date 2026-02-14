@@ -23,7 +23,7 @@ from pathlib import Path
 import base64
 import sys
 
-logger = logging.getLogger("ai-scientist")
+logger = logging.getLogger("ai-researcher")
 
 ExecCallbackType = Callable[[str, bool], ExecutionResult]
 

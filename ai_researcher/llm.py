@@ -2,7 +2,7 @@ import json
 import os
 import re
 from typing import Any
-from ai_scientist.utils.token_tracker import track_token_usage
+from ai_researcher.utils.token_tracker import track_token_usage
 
 import anthropic
 import backoff

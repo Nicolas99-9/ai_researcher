@@ -195,3 +195,17 @@ final_papers/
 cache/
 huggingface/
 .worktrees/
+
+# Test files
+tests/
+
+# Comparison run logs (contain generated data, not source)
+comparison_runs/
+
+# Dev config files
+bfts_config_fast.yaml
+bfts_config_fullscale.yaml
+requirements-dev.txt
+
+# Findings (internal evaluation document)
+findings.md

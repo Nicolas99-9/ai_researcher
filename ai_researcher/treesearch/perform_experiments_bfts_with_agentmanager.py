@@ -28,7 +28,7 @@ from .agent_manager import Stage
 from .log_summarization import overall_summarize
 
 
-logger = logging.getLogger("ai-scientist")
+logger = logging.getLogger("ai-researcher")
 
 
 def journal_to_rich_tree(journal: Journal, cfg):

@@ -1,164 +1,291 @@
-<div align="center">
-  <a href="https://github.com/SakanaAI/AI-Scientist_v2/blob/main/docs/logo_v1.jpg">
-    <img src="docs/logo_v1.png" width="215" alt="AI Scientist v2 Logo" />
-  </a>
-  <h1>
-    <b>The AI Scientist-v2: Workshop-Level Automated</b><br>
-    <b>Scientific Discovery via Agentic Tree Search</b>
-  </h1>
-</div>
+# AI-Researcher: Hypothesis-Driven Autonomous Scientific Discovery
 
-<p align="center">
-  📚 <a href="https://pub.sakana.ai/ai-scientist-v2/paper">[Paper]</a> |
-  📝 <a href="https://sakana.ai/ai-scientist-first-publication/"> [Blog Post]</a> |
-  📂 <a href="https://github.com/SakanaAI/AI-Scientist-ICLR2025-Workshop-Experiment"> [ICLR2025 Workshop Experiment]</a>
-</p>
+> Built on top of [The AI Scientist-v2](https://github.com/SakanaAI/AI-Scientist-v2) by Sakana AI.
 
-Fully autonomous scientific research systems are becoming increasingly capable, with AI playing a pivotal role in transforming how scientific discoveries are made.
-We are excited to introduce The AI Scientist-v2, a generalized end-to-end agentic system that has generated the first workshop paper written entirely by AI and accepted through peer review.
+AI-Researcher extends the AI Scientist-v2 pipeline with **hypothesis-driven science** capabilities. Where AI Scientist-v2 performs exploratory tree search over experiment code, AI-Researcher adds structured scientific reasoning: it remembers past experiments, generates falsifiable hypotheses from results, designs targeted ablation studies to test them, and evaluates evidence to update hypothesis status.
 
-This system autonomously generates hypotheses, runs experiments, analyzes data, and writes scientific manuscripts. Unlike [its predecessor (AI Scientist-v1)](https://github.com/SakanaAI/AI-Scientist), the AI Scientist-v2 removes reliance on human-authored templates, generalizes across Machine Learning (ML) domains, and employs a progressive agentic tree search, guided by an experiment manager agent.
+## What's New
 
-> **Note:**
-> The AI Scientist-v2 doesn’t necessarily produce better papers than v1, especially when a strong starting template is available. v1 follows well-defined templates, leading to high success rates, while v2 takes a broader, more exploratory approach with lower success rates. v1 works best for tasks with clear objectives and a solid foundation, whereas v2 is designed for open-ended scientific exploration.
+AI-Researcher introduces two core modules and integrates them throughout the 4-stage BFTS pipeline:
 
-> **Caution!**
-> This codebase will execute Large Language Model (LLM)-written code. There are various risks and challenges associated with this autonomy, including the potential use of dangerous packages, uncontrolled web access, and the possibility of spawning unintended processes. Ensure that you run this within a controlled sandbox environment (e.g., a Docker container). Use at your own discretion.
+### ScientificMemory
 
-## Table of Contents
+A persistent, structured store of all experiment outcomes (successes and failures) across stages. Every node evaluated by the pipeline is recorded with its plan, outcome, failure mode, metrics, terminal output snippet, and a code hash for deduplication.
 
-1.  [Requirements](#requirements)
-    *   [Installation](#installation)
-    *   [Supported Models and API Keys](#supported-models-and-api-keys)
-2.  [Generate Research Ideas](#generate-research-ideas)
-3.  [Run AI Scientist-v2 Paper Generation Experiments](#run-ai-scientist-v2-paper-generation-experiments)
-4.  [Citing The AI Scientist-v2](#citing-the-ai-scientist-v2)
-5.  [Frequently Asked Questions](#frequently-asked-questions)
-6.  [Acknowledgement](#acknowledgement)
+- **Balanced prompt injection**: When generating new experiments, the LLM receives context from up to 10 prior experiments (5 failures + 5 successes), giving it awareness of what has been tried and what failed.
+- **Failure-aware debugging**: Failure records are available for injection into debug prompts, helping the LLM avoid repeating known failure modes.
+- **Code deduplication**: Records are keyed by SHA-256 code hash to identify duplicate approaches.
+
+Key file: [`ai_researcher/treesearch/scientific_memory.py`](ai_researcher/treesearch/scientific_memory.py)
+
+### HypothesisTracker
+
+A structured system for managing scientific hypotheses through their full lifecycle: generation, testing, evaluation, and falsification/support.
+
+- **LLM-based hypothesis generation**: After Stage 3 (creative research), the system uses the best-performing experiment to generate up to 5 specific, falsifiable hypotheses about *why* the method works.
+- **Targeted ablation design**: In Stage 4, ablation experiments are designed to directly test hypotheses rather than performing generic ablations.
+- **Evidence evaluation**: After each ablation completes, an LLM evaluates whether the evidence supports or falsifies the hypothesis, updating its confidence score.
+- **Paper integration**: Hypothesis testing results are formatted for inclusion in the generated paper via `format_for_paper()`.
+
+Key file: [`ai_researcher/treesearch/hypothesis_tracker.py`](ai_researcher/treesearch/hypothesis_tracker.py)
+
+### Pipeline Integration
+
+Both modules are woven into the existing BFTS pipeline:
+
+| Component | File | What Changed |
+|-----------|------|-------------|
+| Instantiation | `agent_manager.py` | ScientificMemory and HypothesisTracker created at pipeline start |
+| Experiment recording | `parallel_agent.py` | Every evaluated node is recorded to ScientificMemory |
+| Prompt injection | `parallel_agent.py` | Memory context injected into experiment generation prompts |
+| Hypothesis generation | `parallel_agent.py` | After Stage 3, hypotheses generated from best node |
+| Ablation design | `parallel_agent.py` | Stage 4 ablations target specific hypotheses |
+| Evidence evaluation | `parallel_agent.py` | Ablation results evaluated against hypothesis predictions |
+| Buggy ablation recovery | `parallel_agent.py` | Failed hypothesis tests reset hypothesis to `untested` for retry |
+| Checkpointing | `agent_manager.py` | Memory and hypotheses saved to pickle at each checkpoint |
+| Summary output | `perform_experiments_bfts_with_agentmanager.py` | `hypothesis_summary.json` written after pipeline completion |
+
+### New Files
+
+```
+ai_researcher/treesearch/scientific_memory.py   # ScientificMemory and ExperimentRecord
+ai_researcher/treesearch/hypothesis_tracker.py   # HypothesisTracker, Hypothesis, prompt builders
+tests/treesearch/test_scientific_memory.py      # Unit tests for ScientificMemory
+tests/treesearch/test_hypothesis_tracker.py     # Unit tests for HypothesisTracker
+tests/treesearch/test_hypothesis_ablation.py    # Ablation workflow tests
+tests/treesearch/test_memory_integration.py     # Integration tests
+tests/treesearch/test_checkpointing.py          # Checkpoint serialization tests
+tests/treesearch/test_edge_cases.py             # Edge case tests
+tests/treesearch/test_integration_real_llm.py   # Real LLM integration tests
+tests/treesearch/test_paper_integration.py      # Paper formatting tests
+findings.md                                      # Detailed comparison results
+run_comparison.py                                # Comparison runner script
+bfts_config_fast.yaml                            # Fast config (reduced iterations)
+bfts_config_fullscale.yaml                       # Full-scale config with corrected model IDs
+```
 
 ## Requirements
 
-This code is designed to run on Linux with NVIDIA GPUs using CUDA and PyTorch.
+This code is designed to run on Linux or macOS with Python 3.11+. GPU support (NVIDIA CUDA) is recommended for ML experiment workloads but not required for the pipeline itself.
 
 ### Installation
 
 ```bash
 # Create a new conda environment
-conda create -n ai_scientist python=3.11
-conda activate ai_scientist
+conda create -n ai_researcher python=3.11
+conda activate ai_researcher
 
-# Install PyTorch with CUDA support (adjust pytorch-cuda version for your setup)
+# Install PyTorch (adjust for your setup)
+# With CUDA:
 conda install pytorch torchvision torchaudio pytorch-cuda=12.4 -c pytorch -c nvidia
+# CPU-only (macOS):
+conda install pytorch torchvision torchaudio -c pytorch
 
-# Install PDF and LaTeX tools
+# Install PDF and LaTeX tools (needed for paper generation)
 conda install anaconda::poppler
 conda install conda-forge::chktex
 
-# Install Python package requirements
+# Install Python dependencies
 pip install -r requirements.txt
 ```
-
-Installation usually takes no more than one hour.
 
 ### Supported Models and API Keys
 
 #### OpenAI Models
 
-By default, the system uses the `OPENAI_API_KEY` environment variable for OpenAI models.
-
-#### Gemini Models
-
-By default, the system uses the `GEMINI_API_KEY` environment variable for Gemini models through OpenAI API.
+Set the `OPENAI_API_KEY` environment variable. Used for feedback evaluation, paper writing, and optionally for code generation.
 
 #### Claude Models via AWS Bedrock
 
-To use Claude models provided by Amazon Bedrock, install the necessary additional packages:
+Install additional packages and configure AWS credentials:
+
 ```bash
 pip install anthropic[bedrock]
 ```
-Next, configure valid [AWS Credentials](https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-envvars.html) and the target [AWS Region](https://docs.aws.amazon.com/bedrock/latest/userguide/bedrock-regions.html) by setting the following environment variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION_NAME`.
 
-#### Semantic Scholar API (Literature Search)
-
-Our code can optionally use a Semantic Scholar API Key (`S2_API_KEY`) for higher throughput during literature search [if you have one](https://www.semanticscholar.org/product/api). This is used during both the ideation and paper writing stages. The system should work without it, though you might encounter rate limits or reduced novelty checking during ideation. If you experience issues with Semantic Scholar, you can skip the citation phase during paper generation.
-
-#### Setting API Keys
-
-Ensure you provide the necessary API keys as environment variables for the models you intend to use. For example:
+Set environment variables:
 ```bash
-export OPENAI_API_KEY="YOUR_OPENAI_KEY_HERE"
-export S2_API_KEY="YOUR_S2_KEY_HERE"
-# Set AWS credentials if using Bedrock
-# export AWS_ACCESS_KEY_ID="YOUR_AWS_ACCESS_KEY_ID"
-# export AWS_SECRET_ACCESS_KEY="YOUR_AWS_SECRET_KEY"
-# export AWS_REGION_NAME="your-aws-region"
+export AWS_ACCESS_KEY_ID="your-key"
+export AWS_SECRET_ACCESS_KEY="your-secret"
+export AWS_REGION_NAME="your-region"
+```
+
+**Note on model IDs:** When using Bedrock in cross-region inference profiles (e.g., `ap-northeast-1`), use the inference profile prefix:
+```
+apac.anthropic.claude-3-5-sonnet-20241022-v2:0
+```
+instead of `anthropic.claude-3-5-sonnet-20241022-v2:0`.
+
+#### Gemini Models
+
+Set the `GEMINI_API_KEY` environment variable for Gemini models through OpenAI API.
+
+#### Semantic Scholar API
+
+Optionally set `S2_API_KEY` for literature search and novelty checking during ideation and paper writing.
+
+```bash
+export OPENAI_API_KEY="your-key"
+export S2_API_KEY="your-key"        # optional
 ```
 
 ## Generate Research Ideas
 
-Before running the full AI Scientist-v2 experiment pipeline, you first use the `ai_scientist/perform_ideation_temp_free.py` script to generate potential research ideas. This script uses an LLM to brainstorm and refine ideas based on a high-level topic description you provide, interacting with tools like Semantic Scholar to check for novelty.
+Before running the pipeline, generate research ideas using the ideation script:
 
-1.  **Prepare a Topic Description:** Create a Markdown file (e.g., `my_research_topic.md`) describing the research area or theme you want the AI to explore. This file should contain sections like `Title`, `Keywords`, `TL;DR`, and `Abstract` to define the scope of the research. Refer to the example file `ai_scientist/ideas/i_cant_believe_its_not_better.md` for the expected structure and content format. Place your file in a location accessible by the script (e.g., the `ai_scientist/ideas/` directory).
+```bash
+python ai_researcher/perform_ideation_temp_free.py \
+  --workshop-file "ai_researcher/ideas/my_research_topic.md" \
+  --model gpt-4o-2024-05-13 \
+  --max-num-generations 20 \
+  --num-reflections 5
+```
 
-2.  **Run the Ideation Script:** Execute the script from the main project directory, pointing it to your topic description file and specifying the desired LLM.
+This produces a JSON file (e.g., `ai_researcher/ideas/my_research_topic.json`) containing structured research ideas with hypotheses, proposed experiments, and related work analysis.
 
-    ```bash
-    python ai_scientist/perform_ideation_temp_free.py \
-     --workshop-file "ai_scientist/ideas/my_research_topic.md" \
-     --model gpt-4o-2024-05-13 \
-     --max-num-generations 20 \
-     --num-reflections 5
-    ```
-    *   `--workshop-file`: Path to your topic description Markdown file.
-    *   `--model`: The LLM to use for generating ideas (ensure you have the corresponding API key set).
-    *   `--max-num-generations`: How many distinct research ideas to attempt generating.
-    *   `--num-reflections`: How many refinement steps the LLM should perform for each idea.
+See `ai_researcher/ideas/i_cant_believe_its_not_better.md` for the expected format of your topic description file.
 
-3.  **Output:** The script will generate a JSON file named after your input Markdown file (e.g., `ai_scientist/ideas/my_research_topic.json`). This file will contain a list of structured research ideas, including hypotheses, proposed experiments, and related work analysis.
+## Run AI-Researcher Pipeline
 
-4.  **Proceed to Experiments:** Once you have the generated JSON file containing research ideas, you can proceed to the next section to run the experiments.
+### Configuration
 
-This ideation step guides the AI Scientist towards specific areas of interest and produces concrete research directions to be tested in the main experimental pipeline.
+The pipeline is configured via a YAML file. The default is `bfts_config.yaml`. Key parameters:
 
-## Run AI Scientist-v2 Paper Generation Experiments
+```yaml
+agent:
+  type: parallel
+  num_workers: 4              # parallel exploration paths
+  stages:
+    stage1_max_iters: 20      # initial implementation
+    stage2_max_iters: 12      # baseline tuning
+    stage3_max_iters: 12      # creative research
+    stage4_max_iters: 18      # hypothesis-driven ablation
+  steps: 5
+  k_fold_validation: 1
+  multi_seed_eval:
+    num_seeds: 3
 
-Using the JSON file generated in the previous ideation step, you can now launch the main AI Scientist-v2 pipeline. This involves running experiments via agentic tree search, analyzing results, and generating a paper draft.
+  code:
+    model: apac.anthropic.claude-3-5-sonnet-20241022-v2:0
+    temp: 1.0
+    max_tokens: 12000
 
-Specify the models used for the write-up and review phases via command-line arguments.
-The configuration for the best-first tree search (BFTS) is located in `bfts_config.yaml`. Adjust parameters in this file as needed.
+  feedback:
+    model: gpt-4o-2024-11-20
+    temp: 0.5
+    max_tokens: 8192
 
-Key tree search configuration parameters in `bfts_config.yaml`:
+  search:
+    max_debug_depth: 3
+    debug_prob: 0.5
+    num_drafts: 3
+```
 
--   `agent` config:
-    -   Set `num_workers` (number of parallel exploration paths) and `steps` (maximum number of nodes to explore). For example, if `num_workers=3` and `steps=21`, the tree search will explore up to 21 nodes, expanding 3 nodes concurrently at each step.
-    -   `num_seeds`: Should generally be the same as `num_workers` if `num_workers` is less than 3. Otherwise, set `num_seeds` to 3.
-    -   Note: Other agent parameters like `k_fold_validation`, `expose_prediction`, and `data_preview` are not used in the current version.
--   `search` config:
-    -   `max_debug_depth`: The maximum number of times the agent will attempt to debug a failing node before abandoning that search path.
-    -   `debug_prob`: The probability of attempting to debug a failing node.
-    -   `num_drafts`: The number of initial root nodes (i.e., the number of independent trees to grow) during Stage 1.
+A fast configuration (`bfts_config_fast.yaml`) is available for quick testing with reduced iterations (12/6/6/6, 2 workers).
 
-Example command to run AI-Scientist-v2 using a generated idea file (e.g., `my_research_topic.json`). Please review `bfts_config.yaml` for detailed tree search parameters (the default config includes `claude-3-5-sonnet` for experiments). Do not set `load_code` if you do not want to initialize experimentation with a code snippet.
+### Launch the Pipeline
 
 ```bash
 python launch_scientist_bfts.py \
- --load_ideas "ai_scientist/ideas/my_research_topic.json" \
- --load_code \
- --add_dataset_ref \
- --model_writeup o1-preview-2024-09-12 \
- --model_citation gpt-4o-2024-11-20 \
- --model_review gpt-4o-2024-11-20 \
- --model_agg_plots o3-mini-2025-01-31 \
- --num_cite_rounds 20
+  --load_ideas "ai_researcher/ideas/my_research_topic.json" \
+  --load_code \
+  --add_dataset_ref \
+  --model_writeup o1-preview-2024-09-12 \
+  --model_citation gpt-4o-2024-11-20 \
+  --model_review gpt-4o-2024-11-20 \
+  --model_agg_plots o3-mini-2025-01-31 \
+  --num_cite_rounds 20
 ```
 
-Once the initial experimental stage is complete, you will find a timestamped log folder inside the `experiments/` directory. Navigate to `experiments/"timestamp_ideaname"/logs/0-run/` within that folder to find the tree visualization file `unified_tree_viz.html`.
-After all experiment stages are complete, the writeup stage begins. The writeup stage typically takes about 20 to 30 minutes in total. Once it finishes, you should see `timestamp_ideaname.pdf` in the `timestamp_ideaname` folder.
-For this example run, all stages typically finish within several hours.
+To use a specific config file, modify `bfts_config.yaml` in the project root before launching.
 
-## Citing The AI Scientist-v2
+### Pipeline Stages
 
-If you use **The AI Scientist-v2** in your research, please cite our work as follows:
+The BFTS pipeline runs in 4 stages, each building on the previous:
+
+1. **Stage 1 - Initial Implementation**: Multiple independent drafts of the experiment code. ScientificMemory begins recording all outcomes.
+2. **Stage 2 - Baseline Tuning**: Iterative improvement of the best Stage 1 result. Memory context helps avoid repeating failed approaches.
+3. **Stage 3 - Creative Research**: Exploratory modifications. After this stage, hypotheses are generated from the best-performing node.
+4. **Stage 4 - Hypothesis-Driven Ablation**: Each ablation experiment targets a specific hypothesis. Results are evaluated as supporting or falsifying evidence.
+
+### Output Structure
+
+After completion, find results in `experiments/<timestamp_ideaname>/`:
+
+```
+logs/0-run/
+  unified_tree_viz.html          # interactive tree visualization
+  hypothesis_summary.json        # all hypotheses with evidence and status
+  research_summary.json          # experiment results summary
+  baseline_summary.json          # baseline metrics
+  draft_summary.json             # draft-level summary
+  experiment_results/            # per-node experiment outputs
+```
+
+### Running Comparisons
+
+To compare AI-Researcher against vanilla AI Scientist-v2, use the comparison runner:
+
+```bash
+python run_comparison.py
+```
+
+This script runs the full pipeline with DEBUG-level logging and saves detailed logs to `comparison_runs/`. See `findings.md` for detailed comparison results from our evaluation.
+
+## Architecture
+
+```
+ai_researcher/
+  treesearch/
+    scientific_memory.py          # ScientificMemory + ExperimentRecord
+    hypothesis_tracker.py         # HypothesisTracker + Hypothesis + prompt builders
+    parallel_agent.py             # Main agent logic (modified for memory + hypotheses)
+    agent_manager.py              # Pipeline orchestrator (instantiation + checkpointing)
+    perform_experiments_bfts_with_agentmanager.py  # Entry point (hypothesis summary output)
+    backend/                      # LLM backends (Anthropic, OpenAI)
+```
+
+### How It Works
+
+1. **Recording**: After each node is evaluated (success or failure), `ScientificMemory.record(node)` creates an `ExperimentRecord` with plan, outcome, metrics, failure mode, and code hash.
+
+2. **Prompt injection**: When generating new experiments, `ScientificMemory.format_for_prompt()` returns a balanced sample of past experiments (failures + successes) for the LLM to learn from.
+
+3. **Hypothesis generation**: After Stage 3, `_generate_hypotheses_from_results()` sends the best node's plan, analysis, and code to an LLM, which returns up to 5 structured hypotheses via function calling (`hypothesis_generation_spec`).
+
+4. **Targeted ablation**: In Stage 4, `_generate_ablation_idea()` checks for untested hypotheses and generates ablation prompts targeting specific hypotheses via `build_ablation_prompt_from_hypothesis()`.
+
+5. **Evidence evaluation**: After an ablation completes, `_evaluate_hypothesis_evidence()` asks an LLM to determine whether the result supports or falsifies the hypothesis (`hypothesis_evidence_spec`). The hypothesis status and confidence are updated accordingly.
+
+6. **Recovery**: If a hypothesis-targeted ablation fails (buggy code), the hypothesis is reset to `untested` so it can be retried.
+
+7. **Checkpointing**: ScientificMemory and HypothesisTracker are serialized to pickle at each checkpoint, surviving pipeline restarts.
+
+## Evaluation Results
+
+Full comparison results are documented in [`findings.md`](findings.md). Key highlights from the full-scale evaluation:
+
+| Metric | AI-Researcher (Improved) | Vanilla AI Scientist-v2 |
+|--------|-------------------------|------------------------|
+| Total nodes explored | 56 | 67 |
+| All 4 stages completed | Yes | Yes |
+| Best accuracy | 1.0 (train + test) | CGS ~60.23 |
+| Hypotheses generated | 5 | 0 (no hypothesis system) |
+| Hypotheses correctly evaluated | 3/5 (60%) | N/A |
+| ScientificMemory records | 56 | N/A |
+| Memory prompt injections | 13 | N/A |
+| Runtime | ~54 min | ~93 min |
+
+### Known Limitations
+
+- **Stage 3 reliability**: Creative research stage has high failure rates in both systems (0-100% buggy code rate)
+- **Hypothesis evaluation accuracy**: LLM-based evaluation (gpt-4o-mini) achieves ~56-60% accuracy, sometimes confusing supported/falsified
+- **failure_memory dead code**: The `format_failures_for_prompt()` debug injection path is never triggered in practice
+- **Different problem domains**: The two runs used different research ideas, making direct metric comparison imperfect
+
+## Citing
+
+If you use AI-Researcher in your work, please cite both this project and the original AI Scientist-v2:
 
 ```bibtex
 @article{aiscientist_v2,
@@ -169,42 +296,11 @@ If you use **The AI Scientist-v2** in your research, please cite our work as fol
 }
 ```
 
-## Frequently Asked Questions
+## Acknowledgements
 
-**Why wasn't a PDF or a review generated for my experiment?**
+- [The AI Scientist-v2](https://github.com/SakanaAI/AI-Scientist-v2) by Sakana AI - the foundation this project builds upon
+- [AIDE](https://github.com/WecoAI/aideml) - tree search component used within the AI Scientist
 
-The AI Scientist-v2 completes experiments with a success rate that depends on the chosen foundation model, and the complexity of the idea. Higher success rates are generally observed when using powerful models like Claude 3.5 Sonnet for the experimentation phase.
+## License
 
-**What is the estimated cost per experiment?**
-
-The ideation step cost depends on the LLM used and the number of generations/reflections, but is generally low (a few dollars). For the main experiment pipeline, using Claude 3.5 Sonnet for the experimentation phase typically costs around $15–$20 per run. The subsequent writing phase adds approximately $5 when using the default models specified in the example command. Using GPT-4o for `model_citation` is recommended as it can help reduce writing costs.
-
-**How do I run The AI Scientist-v2 for different subject fields?**
-
-First, perform the [Generate Research Ideas](#generate-research-ideas) step. Create a new Markdown file describing your desired subject field or topic, following the structure of the example `ai_scientist/ideas/i_cant_believe_its_not_better.md`. Run the `perform_ideation_temp_free.py` script with this file to generate a corresponding JSON idea file. Then, proceed to the [Run AI Scientist-v2 Paper Generation Experiments](#run-ai-scientist-v2-paper-generation-experiments) step, using this JSON file with the `launch_scientist_bfts.py` script via the `--load_ideas` argument.
-
-**What should I do if I have problems accessing the Semantic Scholar API?**
-
-The Semantic Scholar API is used to assess the novelty of generated ideas and to gather citations during the paper write-up phase. If you don't have an API key, encounter rate limits, you may be able to skip these phases.
-
-**I encountered a "CUDA Out of Memory" error. What can I do?**
-
-This error typically occurs when the AI Scientist-v2 attempts to load or run a model that requires more GPU memory than available on your system. To resolve this, you can try updating your ideation prompt file (`ai_scientist/ideas/my_research_topic.md`) to suggest using smaller models for the experiments.
-
-## Acknowledgement
-
-The tree search component implemented within the `ai_scientist` directory is built on top of the [AIDE](https://github.com/WecoAI/aideml) project. We thank the AIDE developers for their valuable contributions and for making their work publicly available.
-
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=SakanaAI/AI-Scientist-v2&type=Date)](https://star-history.com/#SakanaAI/AI-Scientist-v2&Date)
-
-## ⚖️ License & Responsible Use
-
-This project is licensed under **The AI Scientist Source Code License** (a derivative of the Responsible AI License). 
-
-**Mandatory Disclosure:** By using this code, you are legally bound to clearly and prominently disclose the use of AI in any resulting scientific manuscripts or papers. 
-
-We recommend the following attribution in your paper's Abstract or Methods section:
-> "This manuscript was autonomously generated using [The AI Scientist](https://github.com/SakanaAI/AI-Scientist)."
+This project inherits the AI Scientist Source Code License from the original AI Scientist-v2. By using this code, you are legally bound to clearly and prominently disclose the use of AI in any resulting scientific manuscripts or papers.

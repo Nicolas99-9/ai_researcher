@@ -9,17 +9,17 @@ import traceback
 import unicodedata
 import uuid
 
-from ai_scientist.llm import (
+from ai_researcher.llm import (
     get_response_from_llm,
     extract_json_between_markers,
     create_client,
     AVAILABLE_LLMS,
 )
 
-from ai_scientist.tools.semantic_scholar import search_for_papers
+from ai_researcher.tools.semantic_scholar import search_for_papers
 
-from ai_scientist.perform_vlm_review import generate_vlm_img_review
-from ai_scientist.vlm import create_client as create_vlm_client
+from ai_researcher.perform_vlm_review import generate_vlm_img_review
+from ai_researcher.vlm import create_client as create_vlm_client
 
 
 def remove_accents_and_clean(s):
@@ -512,7 +512,7 @@ def perform_writeup(
         # Prepare a new fresh latex folder
         if not osp.exists(osp.join(latex_folder, "template.tex")):
             shutil.copytree(
-                "ai_scientist/blank_icml_latex", latex_folder, dirs_exist_ok=True
+                "ai_researcher/blank_icml_latex", latex_folder, dirs_exist_ok=True
             )
 
         writeup_file = osp.join(latex_folder, "template.tex")

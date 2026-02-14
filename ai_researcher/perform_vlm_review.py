@@ -3,13 +3,13 @@ import hashlib
 import pymupdf
 import re
 import base64
-from ai_scientist.vlm import (
+from ai_researcher.vlm import (
     get_response_from_vlm,
     get_batch_responses_from_vlm,
     extract_json_between_markers,
 )
 
-from ai_scientist.perform_llm_review import load_paper
+from ai_researcher.perform_llm_review import load_paper
 
 
 def encode_image_to_base64(image_data):

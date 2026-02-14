@@ -7,7 +7,7 @@ from funcy import notnone, once, select_values
 import openai
 from rich import print
 
-logger = logging.getLogger("ai-scientist")
+logger = logging.getLogger("ai-researcher")
 
 
 OPENAI_TIMEOUT_EXCEPTIONS = (
