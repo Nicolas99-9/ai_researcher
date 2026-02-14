@@ -270,6 +270,8 @@ Your research idea:\n\n
             "cfg": self.cfg,
             "workspace_dir": self.workspace_dir,
             "current_stage": self.current_stage,
+            "scientific_memory": self.scientific_memory.to_dict(),
+            "hypothesis_tracker": self.hypothesis_tracker.to_dict(),
         }
         print("Saving checkpoint to ", save_path)
         with open(save_path, "wb") as f:
