@@ -2255,6 +2255,59 @@ class ParallelAgent:
             self._ablation_state["completed_ablations"].add(ablation_name)
             logger.info(f"Ablation {ablation_name} completed successfully")
 
+            # If this was a hypothesis-driven ablation, evaluate the evidence
+            if (
+                self.hypothesis_tracker is not None
+                and ablation_name
+                and ablation_name.startswith("hypothesis_test:")
+            ):
+                self._evaluate_hypothesis_evidence(result_node)
+
+    def _evaluate_hypothesis_evidence(self, result_node: Node):
+        """Use LLM to evaluate whether ablation results support or falsify a hypothesis."""
+        from .hypothesis_tracker import hypothesis_evidence_spec
+        from .backend import query
+
+        # Find the matching hypothesis (by ablation_name prefix match)
+        claim_snippet = result_node.ablation_name.replace("hypothesis_test: ", "")
+        matching = [
+            h for h in self.hypothesis_tracker.hypotheses
+            if h.claim[:60] == claim_snippet and h.status in ("untested", "testing")
+        ]
+        if not matching:
+            return
+
+        hypothesis = matching[0]
+
+        try:
+            prompt = {
+                "Introduction": "Evaluate whether experimental evidence supports or falsifies a hypothesis.",
+                "Hypothesis claim": hypothesis.claim,
+                "Hypothesis prediction": hypothesis.prediction,
+                "Ablation result analysis": result_node.analysis or "",
+                "Ablation metrics": str(result_node.metric) if result_node.metric else "N/A",
+                "Ablation terminal output (excerpt)": result_node.term_out[:500] if result_node.term_out else "",
+            }
+            response = query(
+                system_message=prompt,
+                user_message=None,
+                func_spec=hypothesis_evidence_spec,
+                model=self.cfg.agent.feedback.model,
+                temperature=self.cfg.agent.feedback.temp,
+            )
+            hypothesis.update_with_evidence(
+                result=response.get("reasoning", ""),
+                falsified=response.get("falsified", False),
+                new_confidence=response.get("confidence", 0.5),
+                node_id=result_node.id,
+            )
+            logger.info(
+                f"Hypothesis '{hypothesis.claim[:50]}' → {hypothesis.status} "
+                f"(confidence: {hypothesis.confidence:.2f})"
+            )
+        except Exception as e:
+            logger.error(f"Failed to evaluate hypothesis evidence: {e}")
+
     def _aggregate_seed_eval_results(
         self, seed_nodes: List[Node], parent_node: Node
     ) -> str:

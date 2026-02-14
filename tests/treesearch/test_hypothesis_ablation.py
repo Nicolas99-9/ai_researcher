@@ -35,3 +35,41 @@ class TestHypothesisDrivenAblation:
             previous_ablations=[],
         )
         assert "5%" in prompt or "overfit" in prompt.lower()
+
+
+class TestHypothesisEvidence:
+    def test_hypothesis_updated_after_ablation(self):
+        tracker = HypothesisTracker()
+        h = Hypothesis(
+            claim="Attention mechanism drives improvement",
+            prediction="Removing attention drops accuracy by >8%",
+            source_node_id="n1",
+        )
+        tracker.add(h)
+
+        # Simulate ablation result
+        h.update_with_evidence(
+            result="Accuracy dropped from 0.92 to 0.71 (23% drop)",
+            falsified=False,
+            new_confidence=0.9,
+            node_id="ablation_n1",
+        )
+        assert h.status == "supported"
+        assert h.confidence == 0.9
+
+    def test_hypothesis_falsified_after_ablation(self):
+        tracker = HypothesisTracker()
+        h = Hypothesis(
+            claim="Skip connections are essential",
+            prediction="Removing skip connections drops accuracy by >10%",
+            source_node_id="n1",
+        )
+        tracker.add(h)
+
+        h.update_with_evidence(
+            result="Accuracy only dropped by 0.5%",
+            falsified=True,
+            new_confidence=0.1,
+            node_id="ablation_n2",
+        )
+        assert h.status == "falsified"

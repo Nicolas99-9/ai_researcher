@@ -143,6 +143,30 @@ hypothesis_generation_spec = FunctionSpec(
 )
 
 
+hypothesis_evidence_spec = FunctionSpec(
+    name="evaluate_hypothesis_evidence",
+    description="Evaluate whether an ablation result supports or falsifies a hypothesis",
+    json_schema={
+        "type": "object",
+        "properties": {
+            "falsified": {
+                "type": "boolean",
+                "description": "True if the experimental evidence contradicts the prediction",
+            },
+            "confidence": {
+                "type": "number",
+                "description": "Updated confidence in the hypothesis (0.0 to 1.0)",
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "Explanation of why the evidence supports or falsifies the hypothesis",
+            },
+        },
+        "required": ["falsified", "confidence", "reasoning"],
+    },
+)
+
+
 def build_hypothesis_generation_prompt(
     research_idea: str,
     best_node_plan: str,
