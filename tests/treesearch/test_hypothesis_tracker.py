@@ -111,3 +111,24 @@ class TestHypothesisTracker:
         d = tracker.to_dict()
         restored = HypothesisTracker.from_dict(d)
         assert len(restored) == len(tracker)
+
+
+class TestHypothesisGeneration:
+    def test_generate_hypothesis_prompt_structure(self):
+        """Verify the hypothesis generation prompt has required components."""
+        from ai_scientist.treesearch.hypothesis_tracker import build_hypothesis_generation_prompt
+        prompt = build_hypothesis_generation_prompt(
+            research_idea="Study the effect of attention mechanisms on small datasets",
+            best_node_plan="Implemented multi-head attention with 4 heads",
+            best_node_analysis="Model achieved 0.92 accuracy, outperforming baseline MLP at 0.78",
+            best_node_code="import torch\n...",
+        )
+        assert "hypothesis" in prompt.lower() or "claim" in prompt.lower()
+        assert "attention" in prompt.lower()
+        assert "prediction" in prompt.lower() or "falsif" in prompt.lower()
+
+    def test_hypothesis_func_spec_exists(self):
+        """Verify the FunctionSpec for hypothesis generation exists."""
+        from ai_scientist.treesearch.hypothesis_tracker import hypothesis_generation_spec
+        assert hypothesis_generation_spec.name == "generate_hypotheses"
+        assert "hypotheses" in hypothesis_generation_spec.json_schema["properties"]

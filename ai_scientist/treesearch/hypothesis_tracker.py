@@ -105,3 +105,73 @@ class HypothesisTracker(DataClassJsonMixin):
                     lines.append(f"  Evidence: {ev['result']}")
 
         return "\n".join(lines)
+
+
+# --- Hypothesis generation prompt and FunctionSpec ---
+
+from .backend import FunctionSpec
+
+
+hypothesis_generation_spec = FunctionSpec(
+    name="generate_hypotheses",
+    description="Generate testable scientific hypotheses from experimental results",
+    json_schema={
+        "type": "object",
+        "properties": {
+            "hypotheses": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "claim": {
+                            "type": "string",
+                            "description": "A specific, testable claim about why the method works",
+                        },
+                        "prediction": {
+                            "type": "string",
+                            "description": "A concrete, falsifiable prediction. Must specify what ablation/change to make and what quantitative outcome is expected.",
+                        },
+                    },
+                    "required": ["claim", "prediction"],
+                },
+                "maxItems": 5,
+                "description": "List of hypotheses to test",
+            },
+        },
+        "required": ["hypotheses"],
+    },
+)
+
+
+def build_hypothesis_generation_prompt(
+    research_idea: str,
+    best_node_plan: str,
+    best_node_analysis: str,
+    best_node_code: str,
+) -> str:
+    """Build the prompt for LLM-based hypothesis generation."""
+    return f"""You are a rigorous scientist analyzing experimental results. Your task is to generate specific, falsifiable hypotheses about WHY the current method works.
+
+## Research Context
+{research_idea}
+
+## Best Method's Plan
+{best_node_plan}
+
+## Best Method's Analysis
+{best_node_analysis}
+
+## Best Method's Code (for reference)
+```python
+{best_node_code[:3000]}
+```
+
+## Instructions
+Generate hypotheses that:
+1. Make a specific CLAIM about which component or design choice is responsible for the method's performance.
+2. Include a concrete PREDICTION that can be tested via an ablation experiment — specify exactly what to remove/change and what quantitative effect to expect.
+3. Are falsifiable — it must be possible for the ablation to show the prediction is wrong.
+4. Cover different aspects of the method (architecture, training procedure, data handling, etc.).
+
+Do NOT generate vague hypotheses like "the model works because of good hyperparameters." Be specific: "The multi-head attention with 4 heads is responsible for >60% of the accuracy gain over the MLP baseline, because it captures pairwise feature interactions that a single linear layer cannot."
+"""
