@@ -1153,6 +1153,7 @@ class ParallelAgent:
         best_stage2_node=None,
         best_stage1_node=None,
         scientific_memory=None,
+        hypothesis_tracker=None,
     ):
         super().__init__()
         self.task_desc = task_desc
@@ -1160,6 +1161,7 @@ class ParallelAgent:
         self.journal = journal
         self.stage_name = stage_name
         self.scientific_memory = scientific_memory
+        self.hypothesis_tracker = hypothesis_tracker
         self.best_stage3_node = (
             best_stage3_node  # to initialize ablation stuides (stage 4)
         )
@@ -1868,6 +1870,23 @@ class ParallelAgent:
         # Prepare context of what's been tried
         completed = list(self._ablation_state["completed_ablations"])
 
+        # If hypothesis tracker has untested hypotheses, use them for targeted ablation
+        if self.hypothesis_tracker is not None:
+            from .hypothesis_tracker import build_ablation_prompt_from_hypothesis
+            untested = self.hypothesis_tracker.get_untested()
+            if untested:
+                hypothesis = untested[0]
+                hypothesis.status = "testing"
+                return AblationIdea(
+                    name=f"hypothesis_test: {hypothesis.claim[:60]}",
+                    description=build_ablation_prompt_from_hypothesis(
+                        hypothesis=hypothesis,
+                        base_code=self.best_stage3_node.code if self.best_stage3_node else "",
+                        previous_ablations=completed,
+                    ),
+                )
+
+        # Fall back to generic ablation generation
         ablation_prompt = {
             "Introduction": (
                 "You are an AI researcher conducting ablation studies. "

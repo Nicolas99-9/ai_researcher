@@ -175,3 +175,37 @@ Generate hypotheses that:
 
 Do NOT generate vague hypotheses like "the model works because of good hyperparameters." Be specific: "The multi-head attention with 4 heads is responsible for >60% of the accuracy gain over the MLP baseline, because it captures pairwise feature interactions that a single linear layer cannot."
 """
+
+
+def build_ablation_prompt_from_hypothesis(
+    hypothesis: Hypothesis,
+    base_code: str,
+    previous_ablations: list[str],
+) -> str:
+    """Build a targeted ablation prompt from a specific hypothesis."""
+    prev_str = ", ".join(previous_ablations) if previous_ablations else "None yet"
+    return f"""You are an AI researcher conducting a TARGETED ablation study to test a specific hypothesis.
+
+## Hypothesis to Test
+**Claim:** {hypothesis.claim}
+**Prediction:** {hypothesis.prediction}
+
+## Your Task
+Design and implement an ablation experiment that directly tests this hypothesis. Specifically:
+1. Modify the base code to remove or disable the component identified in the claim.
+2. Keep everything else identical to isolate the effect.
+3. The experiment should either SUPPORT or FALSIFY the prediction.
+
+## Base Code
+```python
+{base_code[:4000]}
+```
+
+## Previously Completed Ablations (do not repeat)
+{prev_str}
+
+## Important
+- Change ONLY what the hypothesis targets. Do not change hyperparameters, training epochs, data splits, or anything else.
+- The goal is to isolate the effect of the specific component mentioned in the claim.
+- Print clear metrics that can be compared against the prediction.
+"""
