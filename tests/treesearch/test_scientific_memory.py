@@ -168,3 +168,56 @@ class TestScientificMemory:
         # But get_unique_approaches should dedup
         unique = memory.get_unique_approaches()
         assert len(unique) <= 2
+
+    def test_recurring_failure_patterns(self, make_node):
+        """Test that recurring failures are aggregated into patterns."""
+        memory = ScientificMemory()
+        # Add 3 RuntimeErrors (should form a pattern)
+        for i in range(3):
+            n = make_node(plan=f"load dataset {i}", code=f"code_{i}", is_buggy=True)
+            n.exc_type = "RuntimeError"
+            n.analysis = "dataset scripts are no longer supported"
+            memory.record(n, stage_name="stage_3")
+        # Add 1 ValueError (should NOT form a pattern at min_occurrences=2)
+        n = make_node(plan="different error", code="code_val", is_buggy=True)
+        n.exc_type = "ValueError"
+        n.analysis = "some value error"
+        memory.record(n, stage_name="stage_3")
+
+        patterns = memory.get_recurring_failure_patterns(min_occurrences=2)
+        assert "RuntimeError" in patterns
+        assert len(patterns["RuntimeError"]) == 3
+        assert "ValueError" not in patterns
+
+    def test_format_failures_includes_recurring_patterns(self, make_node):
+        """Test that format_failures_for_prompt includes CRITICAL section for recurring errors."""
+        memory = ScientificMemory()
+        for i in range(4):
+            n = make_node(plan=f"try HF dataset {i}", code=f"code_{i}", is_buggy=True)
+            n.exc_type = "RuntimeError"
+            n.analysis = "dataset scripts are no longer supported"
+            memory.record(n, stage_name="stage_3")
+
+        prompt = memory.format_failures_for_prompt()
+        assert "CRITICAL" in prompt
+        assert "RuntimeError" in prompt
+        assert "failed 4 times" in prompt
+        assert "DO NOT" in prompt
+
+    def test_format_failures_no_recurring_shows_only_recent(self, make_node):
+        """Test that without recurring patterns, only recent failures are shown."""
+        memory = ScientificMemory()
+        n = make_node(plan="single error", code="code_1", is_buggy=True)
+        n.exc_type = "TypeError"
+        n.analysis = "one-off error"
+        memory.record(n, stage_name="stage_1")
+
+        prompt = memory.format_failures_for_prompt()
+        assert "CRITICAL" not in prompt  # No recurring pattern
+        assert "Recent Failures" in prompt
+        assert "TypeError" in prompt
+
+    def test_format_failures_empty_returns_empty(self):
+        """Test that empty memory returns empty string."""
+        memory = ScientificMemory()
+        assert memory.format_failures_for_prompt() == ""

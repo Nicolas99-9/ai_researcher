@@ -148,14 +148,48 @@ class ScientificMemory(DataClassJsonMixin):
                 lines.append(f"**Metric:** {r.metric_summary[:100]}")
         return "\n".join(lines)
 
-    def format_failures_for_prompt(self, max_records: int = 5) -> str:
-        """Format only failure records for prompt injection."""
-        failures = self.get_failures()[-max_records:]
-        if not failures:
-            return "No failures recorded."
+    def get_recurring_failure_patterns(self, min_occurrences: int = 2) -> dict[str, list[ExperimentRecord]]:
+        """Group failures by failure_mode, returning only patterns that recur >= min_occurrences."""
+        from collections import defaultdict
+        groups: dict[str, list[ExperimentRecord]] = defaultdict(list)
+        for r in self.get_failures():
+            key = r.failure_mode or "Unknown"
+            groups[key].append(r)
+        return {k: v for k, v in groups.items() if len(v) >= min_occurrences}
 
-        lines = ["## Known Failure Modes"]
-        for r in failures:
+    def format_failures_for_prompt(self, max_records: int = 5) -> str:
+        """Format failure records for prompt injection.
+
+        Leads with aggregated recurring patterns as explicit prohibitions,
+        then appends recent individual failures for context.
+        """
+        all_failures = self.get_failures()
+        if not all_failures:
+            return ""
+
+        lines = []
+
+        # Part 1: Recurring failure patterns — aggregated and actionable
+        recurring = self.get_recurring_failure_patterns(min_occurrences=2)
+        if recurring:
+            lines.append("## CRITICAL: Recurring Failure Patterns (DO NOT repeat these)")
+            for failure_mode, records in sorted(recurring.items(), key=lambda x: -len(x[1])):
+                count = len(records)
+                # Collect unique plan snippets to show what was tried
+                unique_plans = list(dict.fromkeys(r.plan[:80] for r in records if r.plan))[:3]
+                # Collect unique analysis snippets for root cause
+                unique_analyses = list(dict.fromkeys(r.analysis[:120] for r in records if r.analysis))[:2]
+                lines.append(f"\n**{failure_mode}** — failed {count} times")
+                if unique_plans:
+                    lines.append(f"  Tried: {'; '.join(unique_plans)}")
+                if unique_analyses:
+                    lines.append(f"  Cause: {unique_analyses[0]}")
+                lines.append(f"  ⚠ DO NOT use approaches that trigger this error. Try a fundamentally different strategy.")
+
+        # Part 2: Recent individual failures for detailed context
+        recent = all_failures[-max_records:]
+        lines.append("\n## Recent Failures")
+        for r in recent:
             lines.append("---")
             lines.append(f"**Plan:** {r.plan[:200]}")
             lines.append(f"**Failure:** {r.failure_mode or 'Unknown'}")

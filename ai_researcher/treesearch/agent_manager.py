@@ -154,18 +154,20 @@ class AgentManager:
         self.main_stage_goals: Dict[int, str] = {
             1: """
                 - Focus on getting basic working implementation
-                - Use a simple dataset
+                - Use a simple dataset (synthetic data is acceptable)
                 - Aim for basic functional correctness
                 - If you are given \"Code To Use\", you can directly use it as a starting point.""",
             2: """
                 - Change hyperparameters such as learning rate, number of epochs, batch size, etc. to improve the performance
                 - DO NOT change the model architecture from the previous stage
-                - Introduce TWO more new datasets from HuggingFace test the model. Try very hard to think what Huggingface datasets can be used here for testing.""",
+                - Evaluate on at least TWO additional datasets to test robustness (you can generate synthetic variants, use standard benchmarks, or load from HuggingFace)
+                - If a dataset fails to load, switch to a different dataset or generate synthetic data — do NOT retry the same broken dataset""",
             3: """
-                - Explore novel improvements
+                - Explore novel improvements to the model architecture, training procedure, or loss function
                 - Come up with experiments to reveal new insights
                 - Be creative and think outside the box
-                - MAKE SURE you use THREE HuggingFace dataset in total to test your models""",
+                - Reuse datasets that worked in previous stages; if you need additional datasets, generate synthetic variants or use datasets that loaded successfully before
+                - If an approach causes repeated errors, try a fundamentally different strategy""",
             4: """
                 - Conduct systematic component analysis that reveals the contribution of each part
                 - Use the same datasets you used from the previous stage""",
@@ -408,19 +410,6 @@ Your research idea:\n\n
                 f"Error in sub-stage {current_substage.name} completion evaluation",
             )
 
-        # Terminate if max iterations reached
-        if len(journal.nodes) >= current_substage.max_iterations:
-            logger.info(
-                f"Stage {current_substage.name} completed: reached max iterations"
-            )
-            print(
-                f"[green]Stage {current_substage.name} completed: reached max iterations[/green]"
-            )
-            return True, "Reached max iterations"
-
-        print(f"[green]Stage {current_substage.name} not completed[/green]")
-        return False
-
     def _check_stage_completion(self, stage: Stage) -> bool:
         """Check if current stage is complete based on criteria"""
         journal = self.journals[stage.name]
@@ -520,8 +509,6 @@ Your research idea:\n\n
                     False,
                     "No improvement found from the base node (which is the best node from the previous stage)",
                 )
-            # Check if there are enough research results
-            # Or, we could just let the agent run until max iterations is reached
             # Check if the experiment execution time is too short
             exec_time_minutes = best_node.exec_time / 60
             print(f"[cyan]exec_time_minutes: {exec_time_minutes}[/cyan]")
@@ -530,11 +517,11 @@ Your research idea:\n\n
             ):
                 if exec_time_minutes < self.cfg.exec.timeout / 60 / 2:
                     exec_time_feedback = (
-                        f"Implementation works but runs too quickly ({exec_time_minutes:.2f} minutes)."
-                        "We have up to 60 minutes available for each experiment."
+                        f"Implementation works but runs too quickly ({exec_time_minutes:.2f} minutes). "
+                        "We have up to 60 minutes available for each experiment. "
                         "Make sure to scale up the experiment "
-                        "by increasing the number of epochs, using a larger model, or working with bigger datasets."
-                        "Given that the current execution time is {exec_time_minutes:.2f} minutes, think about how changing the number of epochs to run, or using a larger model, or working with bigger datasets to run"
+                        "by increasing the number of epochs, using a larger model, or working with bigger datasets. "
+                        f"Given that the current execution time is {exec_time_minutes:.2f} minutes, think about how changing the number of epochs to run, or using a larger model, or working with bigger datasets to run "
                         "will affect the execution time, and make sure to scale up the experiment accordingly."
                     )
                     print(f"[cyan]exec_time_feedback: {exec_time_feedback}[/cyan]")
@@ -542,9 +529,107 @@ Your research idea:\n\n
                         -1
                     ].exec_time_feedback = exec_time_feedback
                     return False, exec_time_feedback
+
+            # LLM-based completion evaluation for stage 3
+            vlm_feedback = self._parse_vlm_feedback(best_node)
+            num_successful = len(journal.good_nodes)
+            eval_prompt = f"""
+            Evaluate if stage 3 (creative research) is complete based on the following evidence:
+
+            1. Figure Analysis:
+            {vlm_feedback}
+
+            2. Number of successful experiments: {num_successful}
+            3. Best node improved over baseline: Yes (already verified)
+
+            Requirements for completion:
+            1. At least one novel improvement has been successfully implemented and evaluated
+            2. The improvement shows measurable gains over the baseline
+            3. Training is stable (no divergence or NaN issues in plots)
+
+            Provide a detailed evaluation of completion status.
+            """
+
+            try:
+                evaluation = query(
+                    system_message=eval_prompt,
+                    user_message=None,
+                    func_spec=stage_completion_eval_spec,
+                    model=self.cfg.agent.feedback.model,
+                    temperature=self.cfg.agent.feedback.temp,
+                )
+                if evaluation["is_complete"]:
+                    logger.info(
+                        f"Stage {stage.name} completed: {evaluation['reasoning']}"
+                    )
+                    print(
+                        f"[green]Stage {stage.name} completed: {evaluation['reasoning']}[/green]"
+                    )
+                    return True, evaluation['reasoning']
+                else:
+                    missing = ", ".join(evaluation["missing_criteria"])
+                    logger.info(f"Stage {stage.name} not complete. Missing: {missing}")
+                    print(
+                        f"[yellow]Stage {stage.name} not complete. Missing: {missing}[/yellow]"
+                    )
+                    return False, "Missing criteria: " + missing
+            except Exception as e:
+                logger.error(f"Error in stage 3 completion evaluation: {e}")
+                return False, "Error in stage 3 completion evaluation"
+
         if stage.stage_number == 4:
-            # Just let the agent run until max iterations is reached
-            pass
+            best_node = journal.get_best_node(cfg=self.cfg)
+            if not best_node:
+                return False, "No best node found"
+
+            # Check if ablation experiments have been conducted
+            num_successful = len(journal.good_nodes)
+            if num_successful < 2:
+                return False, f"Only {num_successful} successful ablation(s) so far, need at least 2"
+
+            vlm_feedback = self._parse_vlm_feedback(best_node)
+            eval_prompt = f"""
+            Evaluate if stage 4 (ablation studies) is complete based on the following evidence:
+
+            1. Figure Analysis:
+            {vlm_feedback}
+
+            2. Number of successful ablation experiments: {num_successful}
+
+            Requirements for completion:
+            1. At least 2 ablation experiments have been successfully run
+            2. Results show clear component contribution analysis
+            3. No major issues or instabilities in the plots
+
+            Provide a detailed evaluation of completion status.
+            """
+
+            try:
+                evaluation = query(
+                    system_message=eval_prompt,
+                    user_message=None,
+                    func_spec=stage_completion_eval_spec,
+                    model=self.cfg.agent.feedback.model,
+                    temperature=self.cfg.agent.feedback.temp,
+                )
+                if evaluation["is_complete"]:
+                    logger.info(
+                        f"Stage {stage.name} completed: {evaluation['reasoning']}"
+                    )
+                    print(
+                        f"[green]Stage {stage.name} completed: {evaluation['reasoning']}[/green]"
+                    )
+                    return True, evaluation['reasoning']
+                else:
+                    missing = ", ".join(evaluation["missing_criteria"])
+                    logger.info(f"Stage {stage.name} not complete. Missing: {missing}")
+                    print(
+                        f"[yellow]Stage {stage.name} not complete. Missing: {missing}[/yellow]"
+                    )
+                    return False, "Missing criteria: " + missing
+            except Exception as e:
+                logger.error(f"Error in stage 4 completion evaluation: {e}")
+                return False, "Error in stage 4 completion evaluation"
 
         print(f"[green]Stage {stage.name} not completed[/green]")
         return False, "stage not completed"
