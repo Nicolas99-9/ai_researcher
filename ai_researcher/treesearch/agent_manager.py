@@ -786,11 +786,13 @@ Your research idea:\n\n
 
         except Exception as e:
             logger.error(f"Error generating sub-stage goals: {e}")
-            # Provide fallback goals if LLM fails
-            return f"""
-            Sub-stage Goals:
-            Continue progress on main stage objectives while addressing current issues.
-            """
+            # Provide fallback goals if LLM fails.
+            # Must return (goal_str, sub_stage_name) tuple to match the happy path,
+            # otherwise _create_next_substage will crash on tuple unpacking.
+            return (
+                "Continue progress on main stage objectives while addressing current issues.",
+                "continuation",
+            )
 
     def _create_next_substage(
         self, current_substage: Stage, journal: Journal, substage_feedback: str
