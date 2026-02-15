@@ -1,5 +1,5 @@
 import pytest
-from ai_scientist.treesearch.hypothesis_tracker import Hypothesis, HypothesisTracker
+from ai_researcher.treesearch.hypothesis_tracker import Hypothesis, HypothesisTracker
 
 
 class TestHypothesis:
@@ -116,7 +116,7 @@ class TestHypothesisTracker:
 class TestHypothesisGeneration:
     def test_generate_hypothesis_prompt_structure(self):
         """Verify the hypothesis generation prompt has required components."""
-        from ai_scientist.treesearch.hypothesis_tracker import build_hypothesis_generation_prompt
+        from ai_researcher.treesearch.hypothesis_tracker import build_hypothesis_generation_prompt
         prompt = build_hypothesis_generation_prompt(
             research_idea="Study the effect of attention mechanisms on small datasets",
             best_node_plan="Implemented multi-head attention with 4 heads",
@@ -129,7 +129,7 @@ class TestHypothesisGeneration:
 
     def test_hypothesis_func_spec_exists(self):
         """Verify the FunctionSpec for hypothesis generation exists."""
-        from ai_scientist.treesearch.hypothesis_tracker import hypothesis_generation_spec
+        from ai_researcher.treesearch.hypothesis_tracker import hypothesis_generation_spec
         assert hypothesis_generation_spec.name == "generate_hypotheses"
         assert "hypotheses" in hypothesis_generation_spec.json_schema["properties"]
 

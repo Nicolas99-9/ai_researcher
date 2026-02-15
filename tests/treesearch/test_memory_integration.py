@@ -1,6 +1,6 @@
 import pytest
-from ai_scientist.treesearch.scientific_memory import ScientificMemory, ExperimentRecord
-from ai_scientist.treesearch.journal import Node, Journal
+from ai_researcher.treesearch.scientific_memory import ScientificMemory, ExperimentRecord
+from ai_researcher.treesearch.journal import Node, Journal
 
 
 class TestMemoryIntegration:

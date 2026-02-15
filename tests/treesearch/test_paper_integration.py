@@ -1,5 +1,5 @@
 import pytest
-from ai_scientist.treesearch.hypothesis_tracker import Hypothesis, HypothesisTracker
+from ai_researcher.treesearch.hypothesis_tracker import Hypothesis, HypothesisTracker
 
 
 class TestPaperIntegration:

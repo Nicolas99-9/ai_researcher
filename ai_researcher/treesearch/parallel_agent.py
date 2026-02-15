@@ -259,12 +259,14 @@ class MinimalAgent:
         task_desc,
         cfg,
         memory_summary=None,
+        failure_summary=None,
         evaluation_metrics=None,
         stage=None,
         stage_name=None,
     ):
         self.task_desc = task_desc
         self.memory_summary = memory_summary
+        self.failure_summary = failure_summary
         self.cfg = cfg
         self.evaluation_metrics = evaluation_metrics
         self.stage_name = stage_name
@@ -492,7 +494,7 @@ class MinimalAgent:
         return Node(plan=plan, code=code)
 
     def _debug(self, parent_node: Node) -> Node:
-        failure_memory = self.memory_summary if self.memory_summary else ""
+        failure_memory = self.failure_summary if self.failure_summary else ""
         if failure_memory:
             logger.info(
                 f"[_debug] Injecting failure memory into debug prompt "
@@ -1310,6 +1312,7 @@ class ParallelAgent:
             best_stage3_plot_code = None
             seed_eval = True
             memory_summary = ""
+            failure_summary = ""
             print("[yellow]Starting multi-seed eval...[/yellow]")
             futures.append(
                 self.executor.submit(
@@ -1319,6 +1322,7 @@ class ParallelAgent:
                     self.cfg,
                     gpu_id,
                     memory_summary,
+                    failure_summary,
                     self.evaluation_metrics,
                     self.stage_name,
                     new_ablation_idea,
@@ -1429,6 +1433,7 @@ class ParallelAgent:
         cfg,
         gpu_id: int = None,
         memory_summary: str = None,
+        failure_summary: str = None,
         evaluation_metrics=None,
         stage_name=None,
         new_ablation_idea=None,
@@ -1468,6 +1473,7 @@ class ParallelAgent:
             task_desc=task_desc,
             cfg=cfg,
             memory_summary=memory_summary,
+            failure_summary=failure_summary,
             evaluation_metrics=evaluation_metrics,
             stage_name=stage_name,
         )
@@ -2124,6 +2130,7 @@ class ParallelAgent:
                 f"({len(self.scientific_memory)} records)"
             )
             memory_summary = self.scientific_memory.format_for_prompt(max_records=10)
+            failure_summary = self.scientific_memory.format_failures_for_prompt(max_records=5)
         elif self.cfg.agent.get("summary", None) is not None:
             memory_summary = self.journal.generate_summary(
                 include_code=False,
@@ -2132,8 +2139,10 @@ class ParallelAgent:
                     "temp": self.cfg.agent.summary.temp
                 }
             )
+            failure_summary = ""
         else:
             memory_summary = self.journal.generate_summary(include_code=False)
+            failure_summary = ""
 
         print("Submitting tasks to process pool")
         futures = []
@@ -2188,6 +2197,7 @@ class ParallelAgent:
                     self.cfg,
                     gpu_id,
                     memory_summary,
+                    failure_summary,
                     self.evaluation_metrics,
                     self.stage_name,
                     new_ablation_idea,
@@ -2390,14 +2400,26 @@ class ParallelAgent:
             metrics_text = str(result_node.metric) if result_node.metric else "N/A"
             term_out_text = result_node.term_out[:500] if result_node.term_out else ""
 
-            prompt = {
-                "Introduction": "Evaluate whether experimental evidence supports or falsifies a hypothesis.",
-                "Hypothesis claim": hypothesis.claim,
-                "Hypothesis prediction": hypothesis.prediction,
-                "Ablation result analysis": analysis_text,
-                "Ablation metrics": metrics_text,
-                "Ablation terminal output (excerpt)": term_out_text,
-            }
+            prompt = (
+                "You are evaluating whether an ablation experiment supports or falsifies a scientific hypothesis.\n\n"
+                "CRITICAL DEFINITIONS:\n"
+                "- SUPPORTED: The prediction CAME TRUE. The experimental data matches what the hypothesis predicted.\n"
+                "  Example: Prediction says 'removing X drops accuracy by >=10%'. Accuracy dropped by 25%. "
+                "The prediction came true -> SUPPORTED (prediction_came_true = true).\n"
+                "- FALSIFIED: The prediction did NOT come true. The experimental data contradicts the prediction.\n"
+                "  Example: Prediction says 'removing X drops accuracy by >=10%'. Accuracy only dropped 2%. "
+                "The prediction did not come true -> FALSIFIED (prediction_came_true = false).\n\n"
+                "IMPORTANT: A large effect that EXCEEDS the predicted threshold SUPPORTS the hypothesis. "
+                "Only contradictions (opposite direction or below threshold) FALSIFY it.\n\n"
+                f"## Hypothesis\n"
+                f"**Claim:** {hypothesis.claim}\n"
+                f"**Prediction:** {hypothesis.prediction}\n\n"
+                f"## Experimental Results\n"
+                f"**Metrics:** {metrics_text}\n"
+                f"**Analysis:** {analysis_text}\n"
+                f"**Output:** {term_out_text}\n\n"
+                "Now evaluate: did the prediction come true?"
+            )
 
             logger.info(
                 f"[_evaluate_hypothesis_evidence] Sending LLM query: "
@@ -2415,16 +2437,21 @@ class ParallelAgent:
                 temperature=self.cfg.agent.feedback.temp,
             )
 
+            # Map prediction_came_true (positive framing) to falsified (internal representation)
+            prediction_came_true = response.get("prediction_came_true", True)
+            falsified = not prediction_came_true
+
             logger.info(
                 f"[_evaluate_hypothesis_evidence] LLM response: "
-                f"falsified={response.get('falsified')}, "
+                f"prediction_came_true={prediction_came_true}, "
+                f"falsified={falsified}, "
                 f"confidence={response.get('confidence')}, "
                 f"reasoning='{str(response.get('reasoning', ''))[:150]}'"
             )
 
             hypothesis.update_with_evidence(
                 result=response.get("reasoning", ""),
-                falsified=response.get("falsified", False),
+                falsified=falsified,
                 new_confidence=response.get("confidence", 0.5),
                 node_id=result_node.id,
             )

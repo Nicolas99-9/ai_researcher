@@ -1,6 +1,6 @@
 import pytest
-from ai_scientist.treesearch.journal import Node, Journal
-from ai_scientist.treesearch.utils.metric import MetricValue, WorstMetricValue
+from ai_researcher.treesearch.journal import Node, Journal
+from ai_researcher.treesearch.utils.metric import MetricValue, WorstMetricValue
 
 
 @pytest.fixture

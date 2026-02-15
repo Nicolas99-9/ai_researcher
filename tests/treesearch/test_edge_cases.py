@@ -2,7 +2,7 @@
 Tests for edge cases and bug fixes in the hypothesis pipeline.
 """
 import pytest
-from ai_scientist.treesearch.hypothesis_tracker import (
+from ai_researcher.treesearch.hypothesis_tracker import (
     Hypothesis,
     HypothesisTracker,
     build_ablation_prompt_from_hypothesis,

@@ -124,6 +124,13 @@ class Node(DataClassJsonMixin):
         # Only try to add to parent's children if parent is a Node object
         if self.parent is not None and not isinstance(self.parent, str):
             self.parent.children.add(self)
+            # Inherit experiment identity from parent when not explicitly set.
+            # Debug retries, seed evaluations, and improvement nodes are all
+            # part of the same experiment as their parent.
+            if self.ablation_name is None:
+                self.ablation_name = self.parent.ablation_name
+            if self.hyperparam_name is None:
+                self.hyperparam_name = self.parent.hyperparam_name
 
     def __deepcopy__(self, memo):
         # Create a new instance with copied attributes

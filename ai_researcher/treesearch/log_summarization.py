@@ -296,13 +296,21 @@ def annotate_history(journal, cfg=None):
             node.overall_plan = node.plan
 
 
+def _get_main_stage_number(stage_name):
+    """Extract the main stage number (1-4) from a stage name like '2_baseline_tuning_1_first_attempt'."""
+    import re
+    numbers = re.findall(r"\d+", stage_name)
+    return int(numbers[0]) if numbers else 0
+
+
 def overall_summarize(journals, cfg=None):
     from concurrent.futures import ThreadPoolExecutor
 
-    def process_stage(idx, stage_tuple):
+    def process_stage(stage_tuple):
         stage_name, journal = stage_tuple
+        main_stage = _get_main_stage_number(stage_name)
         annotate_history(journal, cfg=cfg)
-        if idx in [1, 2]:
+        if main_stage in (2, 3):
             best_node = journal.get_best_node(cfg=cfg)
             # get multi-seed results and aggregater node
             child_nodes = best_node.children
@@ -316,14 +324,14 @@ def overall_summarize(journals, cfg=None):
                     break
             if agg_node is None:
                 # skip agg node
-                return {
+                return main_stage, {
                     "best node": get_node_log(best_node),
                     "best node with different seeds": [
                         get_node_log(n) for n in multi_seed_nodes
                     ],
                 }
             else:
-                return {
+                return main_stage, {
                     "best node": get_node_log(best_node),
                     "best node with different seeds": [
                         get_node_log(n) for n in multi_seed_nodes
@@ -332,31 +340,42 @@ def overall_summarize(journals, cfg=None):
                         agg_node
                     ),
                 }
-        elif idx == 3:
+        elif main_stage == 4:
             good_leaf_nodes = [
                 n for n in journal.good_nodes if n.is_leaf and n.ablation_name
             ]
-            return [get_node_log(n) for n in good_leaf_nodes]
-        elif idx == 0:
+            return main_stage, [get_node_log(n) for n in good_leaf_nodes]
+        elif main_stage == 1:
             if cfg.agent.get("summary", None) is not None:
                 model = cfg.agent.summary.get("model", "")
             else:
                 model = "gpt-4o-2024-08-06"
             client = get_ai_client(model)
             summary_json = get_stage_summary(journal, stage_name, model, client)
-            return summary_json
+            return main_stage, summary_json
 
     from tqdm import tqdm
 
+    journals_list = list(journals)
     with ThreadPoolExecutor() as executor:
-        results = list(
+        raw_results = list(
             tqdm(
-                executor.map(process_stage, range(len(list(journals))), journals),
+                executor.map(process_stage, journals_list),
                 desc="Processing stages",
-                total=len(list(journals)),
+                total=len(journals_list),
             )
         )
-        draft_summary, baseline_summary, research_summary, ablation_summary = results
+        # Build dict keyed by main stage number; handles any number of completed stages.
+        stage_summaries = {}
+        for result in raw_results:
+            if result is not None:
+                main_stage, summary = result
+                stage_summaries[main_stage] = summary
+
+        draft_summary = stage_summaries.get(1)
+        baseline_summary = stage_summaries.get(2)
+        research_summary = stage_summaries.get(3)
+        ablation_summary = stage_summaries.get(4)
 
     return draft_summary, baseline_summary, research_summary, ablation_summary
 
@@ -428,25 +447,18 @@ if __name__ == "__main__":
         ablation_summary,
     ) = overall_summarize(journals)
     log_dir = "logs/247-run"
-    draft_summary_path = log_dir + "/draft_summary.json"
-    baseline_summary_path = log_dir + "/baseline_summary.json"
-    research_summary_path = log_dir + "/research_summary.json"
-    ablation_summary_path = log_dir + "/ablation_summary.json"
+    summary_files = [
+        (log_dir + "/draft_summary.json", draft_summary),
+        (log_dir + "/baseline_summary.json", baseline_summary),
+        (log_dir + "/research_summary.json", research_summary),
+        (log_dir + "/ablation_summary.json", ablation_summary),
+    ]
+    for path, summary in summary_files:
+        if summary is not None:
+            with open(path, "w") as f:
+                json.dump(summary, f, indent=2)
 
-    with open(draft_summary_path, "w") as draft_file:
-        json.dump(draft_summary, draft_file, indent=2)
-
-    with open(baseline_summary_path, "w") as baseline_file:
-        json.dump(baseline_summary, baseline_file, indent=2)
-
-    with open(research_summary_path, "w") as research_file:
-        json.dump(research_summary, research_file, indent=2)
-
-    with open(ablation_summary_path, "w") as ablation_file:
-        json.dump(ablation_summary, ablation_file, indent=2)
-
-    print(f"Summary reports written to files:")
-    print(f"- Draft summary: {draft_summary_path}")
-    print(f"- Baseline summary: {baseline_summary_path}")
-    print(f"- Research summary: {research_summary_path}")
-    print(f"- Ablation summary: {ablation_summary_path}")
+    print("Summary reports written to files:")
+    for path, summary in summary_files:
+        if summary is not None:
+            print(f"- {path}")

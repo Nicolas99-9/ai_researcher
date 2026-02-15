@@ -167,24 +167,44 @@ hypothesis_generation_spec = FunctionSpec(
 
 hypothesis_evidence_spec = FunctionSpec(
     name="evaluate_hypothesis_evidence",
-    description="Evaluate whether an ablation result supports or falsifies a hypothesis",
+    description=(
+        "Evaluate whether an ablation experiment's result supports or falsifies "
+        "a hypothesis. IMPORTANT: 'supported' means the prediction came true "
+        "(the data matches what was predicted). 'falsified' means the prediction "
+        "did NOT come true (the data contradicts what was predicted)."
+    ),
     json_schema={
         "type": "object",
         "properties": {
-            "falsified": {
+            "prediction_came_true": {
                 "type": "boolean",
-                "description": "True if the experimental evidence contradicts the prediction",
+                "description": (
+                    "Did the experimental outcome match the hypothesis prediction? "
+                    "True if the prediction was confirmed by the data (e.g., if the "
+                    "prediction said 'accuracy will drop by >=10%' and accuracy did "
+                    "drop by 10% or more, this is True). False if the prediction "
+                    "was NOT confirmed (e.g., accuracy did not drop, or dropped less "
+                    "than the predicted threshold)."
+                ),
             },
             "confidence": {
                 "type": "number",
-                "description": "Updated confidence in the hypothesis (0.0 to 1.0)",
+                "description": (
+                    "Confidence in the hypothesis after seeing this evidence "
+                    "(0.0 to 1.0). Higher if the prediction clearly came true "
+                    "or clearly failed. Lower if results are ambiguous."
+                ),
             },
             "reasoning": {
                 "type": "string",
-                "description": "Explanation of why the evidence supports or falsifies the hypothesis",
+                "description": (
+                    "Step-by-step explanation: (1) What did the prediction say "
+                    "would happen? (2) What actually happened in the experiment? "
+                    "(3) Does the actual outcome match or contradict the prediction?"
+                ),
             },
         },
-        "required": ["falsified", "confidence", "reasoning"],
+        "required": ["prediction_came_true", "confidence", "reasoning"],
     },
 )
 

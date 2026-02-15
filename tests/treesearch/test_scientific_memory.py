@@ -1,5 +1,5 @@
 import pytest
-from ai_scientist.treesearch.scientific_memory import ExperimentRecord, ScientificMemory
+from ai_researcher.treesearch.scientific_memory import ExperimentRecord, ScientificMemory
 
 
 class TestExperimentRecord:

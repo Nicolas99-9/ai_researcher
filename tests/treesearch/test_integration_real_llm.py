@@ -18,8 +18,8 @@ class TestRealHypothesisGeneration:
     def test_generate_hypotheses_via_query(self):
         """Call query() with hypothesis_generation_spec — the exact code path
         used by AgentManager._generate_hypotheses_from_stage3()."""
-        from ai_scientist.treesearch.backend import query
-        from ai_scientist.treesearch.hypothesis_tracker import (
+        from ai_researcher.treesearch.backend import query
+        from ai_researcher.treesearch.hypothesis_tracker import (
             hypothesis_generation_spec,
             build_hypothesis_generation_prompt,
         )
@@ -61,18 +61,31 @@ class TestRealHypothesisGeneration:
     def test_evaluate_hypothesis_evidence_via_query(self):
         """Call query() with hypothesis_evidence_spec — the exact code path
         used by ParallelAgent._evaluate_hypothesis_evidence()."""
-        from ai_scientist.treesearch.backend import query
-        from ai_scientist.treesearch.hypothesis_tracker import hypothesis_evidence_spec
+        from ai_researcher.treesearch.backend import query
+        from ai_researcher.treesearch.hypothesis_tracker import hypothesis_evidence_spec
 
-        # This is a dict prompt — same as _evaluate_hypothesis_evidence uses
-        prompt = {
-            "Introduction": "Evaluate whether experimental evidence supports or falsifies a hypothesis.",
-            "Hypothesis claim": "Multi-head attention with 4 heads is responsible for >60% of accuracy improvement",
-            "Hypothesis prediction": "Removing multi-head attention drops accuracy by >8%",
-            "Ablation result analysis": "After removing the multi-head attention layer and replacing with a simple linear projection, accuracy dropped from 0.92 to 0.71, a 23% absolute drop.",
-            "Ablation metrics": "accuracy: 0.71 (was 0.92)",
-            "Ablation terminal output (excerpt)": "Epoch 50: train_loss=0.45, val_acc=0.71",
-        }
+        # String prompt with explicit definitions — same format as _evaluate_hypothesis_evidence uses
+        claim = "Multi-head attention with 4 heads is responsible for >60% of accuracy improvement"
+        prediction = "Removing multi-head attention drops accuracy by >8%"
+        metrics = "accuracy: 0.71 (was 0.92)"
+        analysis = "After removing the multi-head attention layer and replacing with a simple linear projection, accuracy dropped from 0.92 to 0.71, a 23% absolute drop."
+        term_out = "Epoch 50: train_loss=0.45, val_acc=0.71"
+
+        prompt = (
+            "You are evaluating whether an ablation experiment supports or falsifies a scientific hypothesis.\n\n"
+            "CRITICAL DEFINITIONS:\n"
+            "- SUPPORTED: The prediction CAME TRUE. The experimental data matches what the hypothesis predicted.\n"
+            "  Example: Prediction says 'removing X drops accuracy by >=10%'. Accuracy dropped by 25%. "
+            "The prediction came true -> SUPPORTED (prediction_came_true = true).\n"
+            "- FALSIFIED: The prediction did NOT come true. The experimental data contradicts the prediction.\n"
+            "  Example: Prediction says 'removing X drops accuracy by >=10%'. Accuracy only dropped 2%. "
+            "The prediction did not come true -> FALSIFIED (prediction_came_true = false).\n\n"
+            "IMPORTANT: A large effect that EXCEEDS the predicted threshold SUPPORTS the hypothesis. "
+            "Only contradictions (opposite direction or below threshold) FALSIFY it.\n\n"
+            f"## Hypothesis\n**Claim:** {claim}\n**Prediction:** {prediction}\n\n"
+            f"## Experimental Results\n**Metrics:** {metrics}\n**Analysis:** {analysis}\n**Output:** {term_out}\n\n"
+            "Now evaluate: did the prediction come true?"
+        )
 
         print(f"\n--- Prompt type: {type(prompt)} ---")
 
@@ -88,17 +101,17 @@ class TestRealHypothesisGeneration:
         print(f"--- Response type: {type(response)} ---")
 
         assert isinstance(response, dict), f"Expected dict, got {type(response)}"
-        assert "falsified" in response, f"Missing 'falsified'. Keys: {response.keys()}"
+        assert "prediction_came_true" in response, f"Missing 'prediction_came_true'. Keys: {response.keys()}"
         assert "confidence" in response, f"Missing 'confidence'. Keys: {response.keys()}"
         assert "reasoning" in response, f"Missing 'reasoning'. Keys: {response.keys()}"
-        assert isinstance(response["falsified"], bool), f"falsified is not bool: {type(response['falsified'])}"
+        assert isinstance(response["prediction_came_true"], bool), f"prediction_came_true is not bool: {type(response['prediction_came_true'])}"
         assert isinstance(response["confidence"], (int, float)), f"confidence is not numeric: {type(response['confidence'])}"
 
-        print(f"\n  Falsified: {response['falsified']}")
+        print(f"\n  Prediction came true: {response['prediction_came_true']}")
         print(f"  Confidence: {response['confidence']}")
         print(f"  Reasoning: {response['reasoning']}")
 
-        # Given the evidence (23% drop > 8% predicted), this should NOT be falsified
+        # Given the evidence (23% drop > 8% predicted), prediction_came_true should be True
         # But we just verify the structure — LLM judgment may vary
 
 
@@ -107,8 +120,8 @@ class TestRealEndToEnd:
 
     def test_full_hypothesis_lifecycle(self):
         """Simulate the full flow: generate hypotheses, create ablation, evaluate results."""
-        from ai_scientist.treesearch.backend import query
-        from ai_scientist.treesearch.hypothesis_tracker import (
+        from ai_researcher.treesearch.backend import query
+        from ai_researcher.treesearch.hypothesis_tracker import (
             Hypothesis,
             HypothesisTracker,
             hypothesis_generation_spec,
@@ -182,14 +195,18 @@ class TestRealEndToEnd:
             f"  tracker IDs: {[h.id for h in tracker.hypotheses]}"
         )
 
-        eval_prompt = {
-            "Introduction": "Evaluate whether experimental evidence supports or falsifies a hypothesis.",
-            "Hypothesis claim": matched_h.claim,
-            "Hypothesis prediction": matched_h.prediction,
-            "Ablation result analysis": "After removing the feature interaction layer, AUC dropped from 0.88 to 0.83",
-            "Ablation metrics": "AUC: 0.83",
-            "Ablation terminal output (excerpt)": "Test AUC: 0.83",
-        }
+        eval_prompt = (
+            "You are evaluating whether an ablation experiment supports or falsifies a scientific hypothesis.\n\n"
+            "CRITICAL DEFINITIONS:\n"
+            "- SUPPORTED: The prediction CAME TRUE. The experimental data matches what the hypothesis predicted.\n"
+            "- FALSIFIED: The prediction did NOT come true. The experimental data contradicts the prediction.\n\n"
+            f"## Hypothesis\n**Claim:** {matched_h.claim}\n**Prediction:** {matched_h.prediction}\n\n"
+            f"## Experimental Results\n"
+            f"**Metrics:** AUC: 0.83\n"
+            f"**Analysis:** After removing the feature interaction layer, AUC dropped from 0.88 to 0.83\n"
+            f"**Output:** Test AUC: 0.83\n\n"
+            "Now evaluate: did the prediction come true?"
+        )
 
         eval_response = query(
             system_message=eval_prompt,
@@ -201,9 +218,11 @@ class TestRealEndToEnd:
 
         print(f"\n--- Step 3 result: {eval_response} ---")
 
+        # Map prediction_came_true to falsified for update_with_evidence
+        prediction_came_true = eval_response.get("prediction_came_true", True)
         matched_h.update_with_evidence(
             result=eval_response.get("reasoning", ""),
-            falsified=eval_response.get("falsified", False),
+            falsified=not prediction_came_true,
             new_confidence=eval_response.get("confidence", 0.5),
             node_id="ablation-test-node",
         )
@@ -224,8 +243,8 @@ class TestQueryEdgeCases:
     def test_query_with_none_user_message(self):
         """Both _generate_hypotheses_from_stage3 and _evaluate_hypothesis_evidence
         pass user_message=None. Verify this works."""
-        from ai_scientist.treesearch.backend import query
-        from ai_scientist.treesearch.hypothesis_tracker import hypothesis_evidence_spec
+        from ai_researcher.treesearch.backend import query
+        from ai_researcher.treesearch.hypothesis_tracker import hypothesis_evidence_spec
 
         response = query(
             system_message="Evaluate: claim='X is important', prediction='remove X drops metric by 10%', evidence='metric dropped by 15%'",
@@ -235,22 +254,23 @@ class TestQueryEdgeCases:
             temperature=0.7,
         )
         assert isinstance(response, dict)
-        assert "falsified" in response
+        assert "prediction_came_true" in response
 
-    def test_query_with_empty_strings_in_dict_prompt(self):
+    def test_query_with_empty_strings_in_prompt(self):
         """_evaluate_hypothesis_evidence may have empty analysis/term_out.
-        Verify dict prompt with empty values works."""
-        from ai_scientist.treesearch.backend import query
-        from ai_scientist.treesearch.hypothesis_tracker import hypothesis_evidence_spec
+        Verify prompt with empty values works."""
+        from ai_researcher.treesearch.backend import query
+        from ai_researcher.treesearch.hypothesis_tracker import hypothesis_evidence_spec
 
-        prompt = {
-            "Introduction": "Evaluate whether experimental evidence supports or falsifies a hypothesis.",
-            "Hypothesis claim": "Test claim",
-            "Hypothesis prediction": "Test prediction",
-            "Ablation result analysis": "",  # empty
-            "Ablation metrics": "N/A",
-            "Ablation terminal output (excerpt)": "",  # empty
-        }
+        prompt = (
+            "You are evaluating whether an ablation experiment supports or falsifies a scientific hypothesis.\n\n"
+            "CRITICAL DEFINITIONS:\n"
+            "- SUPPORTED: The prediction CAME TRUE.\n"
+            "- FALSIFIED: The prediction did NOT come true.\n\n"
+            "## Hypothesis\n**Claim:** Test claim\n**Prediction:** Test prediction\n\n"
+            "## Experimental Results\n**Metrics:** N/A\n**Analysis:** \n**Output:** \n\n"
+            "Now evaluate: did the prediction come true?"
+        )
 
         response = query(
             system_message=prompt,
@@ -260,4 +280,4 @@ class TestQueryEdgeCases:
             temperature=0.7,
         )
         assert isinstance(response, dict)
-        assert "falsified" in response
+        assert "prediction_came_true" in response
